@@ -10,7 +10,7 @@
   "main": "src/index.tsx",
 
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
 
   "dependencies": {
