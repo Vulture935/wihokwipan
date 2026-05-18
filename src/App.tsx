@@ -50,7 +50,7 @@ function getSetFromUrl() {
   }
 }
 
-async function apiGet(params: { [key: string]: string }) {
+async function apiGet(params: any) {
 
   const query = new URLSearchParams(
     Object.entries(params).reduce(
