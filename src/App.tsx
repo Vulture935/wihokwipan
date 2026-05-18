@@ -5,27 +5,6 @@ const APPS_SCRIPT_URL =
 
 const QUIZ_SETS = [
   {
-    id: "SPR-64",
-    name: "สอบเข้า ม.1 สายปัญญา ปี 64",
-    total: 10,
-    passingScore: 7,
-    timeLimit: 20 * 60,
-  },
-  {
-    id: "SPR-66 Error",
-    name: "สอบเข้า ม.1 สายปัญญา ปี 66",
-    total: 10,
-    passingScore: 7,
-    timeLimit: 20 * 60,
-  },
-  {
-    id: "HWG-64 Error",
-    name: "สอบเข้า ม.1 หอวัง ปี 64",
-    total: 10,
-    passingScore: 7,
-    timeLimit: 20 * 60,
-  },
-  {
     id: "EQ-BASIC4",
     name: "สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์",
     total: 10,
