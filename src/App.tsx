@@ -89,7 +89,7 @@ function selectQuestions(questions, count) {
     groups[q.groupId].push(q);
   });
   return shuffle(
-    Object.values(groups).map((g) => g[Math.floor(Math.random() * g.length)])
+    Object.values(groups).map((g: any[]) => g[Math.floor(Math.random() * g.length)])
   ).slice(0, count);
 }
 function formatTime(s) {
