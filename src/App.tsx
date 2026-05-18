@@ -71,8 +71,11 @@ function getSetFromUrl() {
   }
 }
 
-async function apiGet(params: any) {
-  const res = await fetch(APPS_SCRIPT_URL + "?" + new URLSearchParams(params));
+async function apiGet(params: Record<string, string>) {
+  const res = await fetch(
+    APPS_SCRIPT_URL + "?" + new URLSearchParams(params)
+  );
+
   return res.json();
 }
 async function apiPost(body) {
