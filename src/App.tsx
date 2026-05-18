@@ -71,10 +71,19 @@ function getSetFromUrl() {
   }
 }
 
-async function apiGet(params: Record<string, string>) {
-  const res = await fetch(
-    APPS_SCRIPT_URL + "?" + new URLSearchParams(params)
+async function apiGet(params: Record<string, any>) {
+
+  const query = new URLSearchParams(
+    Object.entries(params).reduce(
+      (acc, [key, value]) => {
+        acc[key] = String(value);
+        return acc;
+      },
+      {} as Record<string, string>
+    )
   );
+
+  const res = await fetch(`${APPS_SCRIPT_URL}?${query}`);
 
   return res.json();
 }
