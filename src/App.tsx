@@ -71,7 +71,7 @@ function getSetFromUrl() {
   }
 }
 
-async function apiGet(params) {
+async function apiGet(params: any) {
   const res = await fetch(APPS_SCRIPT_URL + "?" + new URLSearchParams(params));
   return res.json();
 }
