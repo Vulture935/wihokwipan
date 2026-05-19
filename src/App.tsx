@@ -40,7 +40,7 @@ function shuffle(arr) {
 function selectQuestions(questions, count) {
   const groups={};
   questions.forEach(q=>{if(!groups[q.groupId])groups[q.groupId]=[];groups[q.groupId].push(q);});
-  return shuffle(Object.values(groups).map((g)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+  return shuffle(Object.values(groups).map((g: any)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
 }
 function formatTime(s) {
   return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`;
@@ -202,7 +202,7 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
           <input value={sid}
             onChange={e=>{setSid(e.target.value);setStudent(null);setError("");}}
             onKeyDown={e=>e.key==="Enter"&&lookup()}
-            placeholder="เช่น 6910009" maxLength={10}
+            placeholder="เช่น 691911" maxLength={10}
             style={{flex:1,background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"8px",
               padding:"11px 14px",color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
               fontSize:"16px",outline:"none",boxSizing:"border-box"}}/>
