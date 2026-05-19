@@ -426,9 +426,10 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
                 display:"flex",alignItems:"center",justifyContent:"center",
                 fontSize:"9px",fontWeight:700,
                 color:i===current?"#1a0e00":"#8b7355",
-                transition:"all .15s",
-                title:isText?"อัตนัย":"ปรนัย",
-              }}>
+                transition:"all .15s"
+              }}
+              title={isText?"อัตนัย":"ปรนัย"}
+            >
                 {isText?"✏":""+( i+1)}
               </div>
             );
