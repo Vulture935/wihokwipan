@@ -8,6 +8,7 @@ const QUIZ_SETS = [
   { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน",    total:10, passingScore:8, timeLimit:30*60 },
   { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ",     total:10, passingScore:8, timeLimit:30*60 },
   { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง",   total:10, passingScore:8, timeLimit:30*60 },
+  { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:25, passingScore:20, timeLimit:90*60 },
 ];
 
 const DEFAULT_THEME = {
