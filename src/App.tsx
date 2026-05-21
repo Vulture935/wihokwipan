@@ -5,16 +5,16 @@ const APPS_SCRIPT_URL =
 
 // ── QUIZ_SETS: passingScore = คะแนนรวมที่ต้องได้ ──────────
 const QUIZ_SETS = [
-  { id:"EQ-BASIC5", name:"สมการ ป.6 เข้า ม.1 สมการ เงิน คน สัตว์", total:10, passingScore:15, timeLimit:30*60 },
-  { id:"EQ-BASIC4", name:"สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์", total:10, passingScore:15, timeLimit:30*60 },
-  { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน",    total:10, passingScore:15, timeLimit:30*60 },
-  { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ",     total:10, passingScore:15, timeLimit:30*60 },
-  { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง",   total:10, passingScore:15, timeLimit:30*60 },
+  { id:"EQ-BASIC5", name:"สมการ ป.6 เข้า ม.1 สมการ เงิน คน สัตว์", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC4", name:"สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน",    total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ",     total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง",   total:10, passingScore:8, timeLimit:30*60 },
   { id:"SPR-164", name:"Pre Test สายปัญญารังสิต ม.1 2564", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SPR-264", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2564", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SPR-166", name:"Pre Test สายปัญญารังสิต ม.1 2566", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SPR-266", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2566", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:25, passingScore:20, timeLimit:90*60 },
+  { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:25, passingScore:36, timeLimit:90*60 },
   // passingScore = คะแนนรวมขั้นต่ำที่ผ่าน (ไม่ใช่จำนวนข้อ)
 ];
 
@@ -234,7 +234,7 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
           <input value={sid}
             onChange={e=>{setSid(e.target.value);setStudent(null);setError("");}}
             onKeyDown={e=>e.key==="Enter"&&lookup()}
-            placeholder="เช่น 6910009" maxLength={10}
+            placeholder="เช่น 691009" maxLength={10}
             style={{flex:1,background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"8px",
               padding:"11px 14px",color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
               fontSize:"16px",outline:"none",boxSizing:"border-box"}}/>
