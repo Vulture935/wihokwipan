@@ -5,10 +5,15 @@ const APPS_SCRIPT_URL =
 
 // ── QUIZ_SETS: passingScore = คะแนนรวมที่ต้องได้ ──────────
 const QUIZ_SETS = [
+  { id:"EQ-BASIC5", name:"สมการ ป.6 เข้า ม.1 สมการ เงิน คน สัตว์", total:10, passingScore:15, timeLimit:30*60 },
   { id:"EQ-BASIC4", name:"สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์", total:10, passingScore:15, timeLimit:30*60 },
   { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน",    total:10, passingScore:15, timeLimit:30*60 },
   { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ",     total:10, passingScore:15, timeLimit:30*60 },
   { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง",   total:10, passingScore:15, timeLimit:30*60 },
+  { id:"SPR-164", name:"Pre Test สายปัญญารังสิต ม.1 2564", total:20, passingScore:16, timeLimit:60*60 },
+  { id:"SPR-264", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2564", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"SPR-166", name:"Pre Test สายปัญญารังสิต ม.1 2566", total:20, passingScore:16, timeLimit:60*60 },
+  { id:"SPR-266", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2566", total:10, passingScore:8, timeLimit:30*60 },
   { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:25, passingScore:20, timeLimit:90*60 },
   // passingScore = คะแนนรวมขั้นต่ำที่ผ่าน (ไม่ใช่จำนวนข้อ)
 ];
@@ -23,7 +28,7 @@ function getSetFromUrl() {
   catch { return null; }
 }
 
-async function apiGet(params) {
+async function apiGet(params: any) {
   const query = new URLSearchParams(
     Object.entries(params).reduce((acc,[k,v]) => { acc[k]=String(v); return acc; }, {})
   );
@@ -43,7 +48,26 @@ function shuffle(arr) {
 function selectQuestions(questions, count) {
   const groups={};
   questions.forEach(q=>{if(!groups[q.groupId])groups[q.groupId]=[];groups[q.groupId].push(q);});
-  return shuffle(Object.values(groups).map(g=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+  return shuffle(Object.values(groups).map((g: any)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+}
+// เรียงตาม GroupID ตามลำดับใน Sheet ไม่สุ่ม
+function orderQuestions(questions, count) {
+  const groups = {};
+  const groupOrder = [];
+  questions.forEach(q => {
+    if (!groups[q.groupId]) {
+      groups[q.groupId] = [];
+      groupOrder.push(q.groupId);
+    }
+    groups[q.groupId].push(q);
+  });
+  // เลือก 1 จากแต่ละกลุ่ม (สุ่มเวอร์ชัน แต่ไม่สุ่มลำดับกลุ่ม)
+  return groupOrder
+    .map(gid => {
+      const g = groups[gid];
+      return g[Math.floor(Math.random() * g.length)];
+    })
+    .slice(0, count);
 }
 function formatTime(s) {
   return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`;
@@ -783,7 +807,14 @@ export default function App() {
       apiGet({ action:"getConfig",    setId:selectedSet.id }),
     ]).then(([qData,cfgData])=>{
       if(!qData.questions?.length){ setLoadError("ไม่พบข้อสอบในชุด "+selectedSet.id); return; }
-      setQuestions(selectQuestions(qData.questions, selectedSet.total));
+      const cfg = buildTheme(cfgData.config);
+const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
+setQuestions(
+  shouldShuffle
+    ? selectQuestions(qData.questions, selectedSet.total)
+    : orderQuestions(qData.questions, selectedSet.total)
+);
+setTheme(cfg);
       setTheme(buildTheme(cfgData.config));
       setScreen("quiz");
     }).catch(()=>setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
