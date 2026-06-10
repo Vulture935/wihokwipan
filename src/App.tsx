@@ -3,13 +3,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbwtjTq25C0pURGGNsPMJ76iAbpzM3R9awJmswQUsQb1NrEG790gZc-_gsvPoXOTcCab/exec";
 
-// ── QUIZ_SETS: passingScore = คะแนนรวมที่ต้องได้ ──────────
+const LOOKER_STUDIO_URL =
+  "https://datastudio.google.com/reporting/c1d52161-5387-4f00-bcda-b70b54116fc5/page/p_h1rlukz72d";
+
+// ── QUIZ_SETS ─────────────────────────────────────────────
 const QUIZ_SETS = [
   { id:"EQ-BASIC5", name:"สมการ ป.6 เข้า ม.1 สมการ เงิน คน สัตว์", total:10, passingScore:8, timeLimit:30*60 },
   { id:"EQ-BASIC4", name:"สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน",    total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ",     total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง",   total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SPR-164", name:"Pre Test สายปัญญารังสิต ม.1 2564", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SPR-166", name:"Pre Test สายปัญญารังสิต ม.1 2566", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SKR-166", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566", total:40, passingScore:32, timeLimit:120*60 },
@@ -17,11 +20,10 @@ const QUIZ_SETS = [
   { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:27, passingScore:36, timeLimit:90*60 },
   { id:"FT-BASIC1", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ตัวประกอบ + จำนวนเฉพาะ", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SKR-166-BB", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับบาร์บี้", total:20, passingScore:16, timeLimit:60*60 },
-  // passingScore = คะแนนรวมขั้นต่ำที่ผ่าน (ไม่ใช่จำนวนข้อ)
 ];
 
 const DEFAULT_THEME = {
-  logoEmoji:"⚙️", themeColor:"#d4af37", fontSize:"22px",
+  logoEmoji:"⚔", themeColor:"#d4af37", fontSize:"22px",
   bgColor:"#0d0803", bgImageUrl:"",
 };
 
@@ -30,13 +32,14 @@ function getSetFromUrl() {
   catch { return null; }
 }
 
-async function apiGet(params: any) {
+async function apiGet(params) {
   const query = new URLSearchParams(
     Object.entries(params).reduce((acc,[k,v]) => { acc[k]=String(v); return acc; }, {})
   );
   const res = await fetch(`${APPS_SCRIPT_URL}?${query}`);
   return res.json();
 }
+
 async function apiPost(body) {
   const res = await fetch(APPS_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) });
   return res.json();
@@ -47,53 +50,47 @@ function shuffle(arr) {
   for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
   return a;
 }
+
 function selectQuestions(questions, count) {
   const groups={};
   questions.forEach(q=>{if(!groups[q.groupId])groups[q.groupId]=[];groups[q.groupId].push(q);});
-  return shuffle(Object.values(groups).map((g: any)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+  return shuffle(Object.values(groups).map((g)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
 }
-// เรียงตาม GroupID ตามลำดับใน Sheet ไม่สุ่ม
+
 function orderQuestions(questions, count) {
   const groups = {};
   const groupOrder = [];
   questions.forEach(q => {
-    if (!groups[q.groupId]) {
-      groups[q.groupId] = [];
-      groupOrder.push(q.groupId);
-    }
+    if (!groups[q.groupId]) { groups[q.groupId] = []; groupOrder.push(q.groupId); }
     groups[q.groupId].push(q);
   });
-  // เลือก 1 จากแต่ละกลุ่ม (สุ่มเวอร์ชัน แต่ไม่สุ่มลำดับกลุ่ม)
-  return groupOrder
-    .map(gid => {
-      const g = groups[gid];
-      return g[Math.floor(Math.random() * g.length)];
-    })
-    .slice(0, count);
+  return groupOrder.map(gid => { const g = groups[gid]; return g[Math.floor(Math.random()*g.length)]; }).slice(0, count);
 }
+
 function formatTime(s) {
   return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`;
 }
+
 function buildTheme(cfg) {
   if(!cfg) return DEFAULT_THEME;
   return {...DEFAULT_THEME,...cfg};
 }
 
-// ── คำนวณคะแนนรวม ─────────────────────────────────────────
 function calcTotalScore(results) {
   return results.reduce((sum, r) => sum + (r.isCorrect ? (r.question.points ?? 1) : 0), 0);
 }
+
 function calcMaxScore(questions) {
   return questions.reduce((sum, q) => sum + (q.points ?? 1), 0);
 }
 
-// ── ตรวจคำตอบอัตนัย ──────────────────────────────────────
 function normalizeNumber(str) {
   if(!str && str!==0) return null;
   const s = String(str).trim().replace(/,/g,".");
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
+
 function checkTextAnswer(userInput, correctAnswer) {
   const u = normalizeNumber(userInput);
   const c = normalizeNumber(correctAnswer);
@@ -101,7 +98,16 @@ function checkTextAnswer(userInput, correctAnswer) {
   return String(userInput).trim().toLowerCase() === String(correctAnswer).trim().toLowerCase();
 }
 
-// ── Particles ──────────────────────────────────────────────
+// ── getFastImageUrl (same as Apps Script) ────────────────
+function getFastImageUrl(fileId) {
+  if (!fileId) return "";
+  let id = String(fileId).trim();
+  if (id.includes("/d/")) id = id.split("/d/")[1].split("/")[0];
+  else if (id.includes("id=")) id = id.split("id=")[1].split("&")[0];
+  return `https://lh3.googleusercontent.com/d/${id}`;
+}
+
+// ── Particles ─────────────────────────────────────────────
 function Particles({ color }) {
   const pts = useRef([...Array(18)].map(()=>({
     w:Math.random()*2.5+0.5, l:Math.random()*100, t:Math.random()*100,
@@ -142,7 +148,159 @@ function Spinner({ color }) {
   );
 }
 
-// ── SET SELECT ─────────────────────────────────────────────
+// ── CHARACTER POPUP ───────────────────────────────────────
+// แสดงรูปตัวละคร + ข้อความ พร้อม animation เด้งขึ้นมา
+// status: "pass" | "fail" | "perfect"
+function CharacterPopup({ charData, status, onClose, tc }) {
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    // เด้งขึ้นมาหลัง 300ms (ให้ result render ก่อน)
+    const t = setTimeout(() => setVisible(true), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleClose = () => {
+    setClosing(true);
+    setTimeout(() => onClose(), 400);
+  };
+
+  if (!charData) return null;
+
+  let imageId = "";
+  let message = "";
+  if (status === "perfect") {
+    imageId = charData.perfectImageId || charData.passImageId || "";
+    message = charData.perfectMsg || charData.passMsg || "เยี่ยมมาก! ได้เต็มทุกข้อ! 🌟";
+  } else if (status === "pass") {
+    imageId = charData.passImageId || "";
+    message = charData.passMsg || "ผ่านแล้ว! ยอดเยี่ยม! 🎉";
+  } else {
+    imageId = charData.failImageId || "";
+    message = charData.failMsg || "ยังไม่ผ่าน สู้ต่อไปนะ! 💪";
+  }
+
+  const imageUrl = getFastImageUrl(imageId);
+
+  // สีตาม status
+  const statusColor = status === "perfect" ? "#f1c40f"
+    : status === "pass" ? "#27ae60"
+    : "#e74c3c";
+
+  const statusGlow = status === "perfect" ? "rgba(241,196,15,0.6)"
+    : status === "pass" ? "rgba(39,174,96,0.5)"
+    : "rgba(231,76,60,0.4)";
+
+  return (
+    <div
+      onClick={handleClose}
+      style={{
+        position:"fixed", inset:0, zIndex:1000,
+        background:"rgba(0,0,0,0.75)",
+        backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        padding:"20px",
+        opacity: visible && !closing ? 1 : 0,
+        transition:"opacity 0.4s ease",
+        cursor:"pointer",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth:"360px", width:"100%",
+          background:"linear-gradient(160deg,rgba(20,12,5,.98),rgba(38,22,8,.98))",
+          border:`2px solid ${statusColor}66`,
+          borderRadius:"20px",
+          padding:"28px 24px 24px",
+          boxShadow:`0 0 60px ${statusGlow}, 0 20px 60px rgba(0,0,0,.9)`,
+          position:"relative",
+          transform: visible && !closing ? "translateY(0) scale(1)" : "translateY(60px) scale(0.85)",
+          opacity: visible && !closing ? 1 : 0,
+          transition:"transform 0.5s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s ease",
+          textAlign:"center",
+          cursor:"default",
+        }}
+      >
+        {/* ปุ่มปิด */}
+        <button
+          onClick={handleClose}
+          style={{
+            position:"absolute", top:"12px", right:"14px",
+            background:"none", border:"none",
+            color:"#6b5a3e", fontSize:"20px",
+            cursor:"pointer", lineHeight:1, padding:"4px",
+          }}
+        >×</button>
+
+        {/* Status badge */}
+        <div style={{
+          display:"inline-block",
+          background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
+          border:`1px solid ${statusColor}66`,
+          borderRadius:"20px", padding:"4px 16px",
+          fontSize:"12px", color:statusColor,
+          fontFamily:"'Cinzel',serif", fontWeight:700,
+          marginBottom:"16px",
+          boxShadow:`0 0 12px ${statusColor}44`,
+        }}>
+          {status === "perfect" ? "★ ได้เต็ม!" : status === "pass" ? "✓ ผ่านแล้ว!" : "✗ ยังไม่ผ่าน"}
+        </div>
+
+        {/* รูปตัวละคร */}
+        {imageUrl && (
+          <div style={{
+            margin:"0 auto 16px",
+            width:"200px", height:"200px",
+            borderRadius:"16px",
+            overflow:"hidden",
+            border:`2px solid ${statusColor}44`,
+            boxShadow:`0 0 30px ${statusColor}33`,
+            background:"rgba(0,0,0,0.3)",
+          }}>
+            <img
+              src={imageUrl}
+              alt="character"
+              style={{width:"100%", height:"100%", objectFit:"cover", display:"block"}}
+              onError={e => { e.target.style.display="none"; }}
+            />
+          </div>
+        )}
+
+        {/* ข้อความ */}
+        <p style={{
+          color:"#f5e6c8",
+          fontFamily:"'Sarabun',sans-serif",
+          fontSize:"18px",
+          lineHeight:1.6,
+          margin:"0 0 20px",
+          textShadow:`0 0 10px ${statusColor}44`,
+        }}>
+          {message}
+        </p>
+
+        {/* ปุ่มปิด */}
+        <button
+          onClick={handleClose}
+          style={{
+            width:"100%", padding:"12px",
+            background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
+            border:`1px solid ${statusColor}55`,
+            borderRadius:"10px",
+            color:statusColor,
+            fontFamily:"'Cinzel',serif", fontSize:"14px",
+            cursor:"pointer",
+          }}
+        >
+          ดูผลลัพธ์
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── SET SELECT ────────────────────────────────────────────
 function SetSelectScreen({ onSelect, theme }) {
   const [search, setSearch] = useState("");
   const filtered = QUIZ_SETS.filter(s=>s.name.includes(search)||s.id.includes(search));
@@ -191,12 +349,12 @@ function SetSelectScreen({ onSelect, theme }) {
   );
 }
 
-// ── LOGIN ──────────────────────────────────────────────────
+// ── LOGIN ─────────────────────────────────────────────────
 function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
-  const [sid, setSid]         = useState("");
+  const [sid, setSid] = useState("");
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
+  const [error, setError] = useState("");
   const tc = theme.themeColor;
 
   const lookup = async () => {
@@ -251,7 +409,7 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
         {error && (
           <div style={{background:"rgba(231,76,60,.1)",border:"1px solid rgba(231,76,60,.4)",
             borderRadius:"10px",padding:"14px",marginBottom:"16px",textAlign:"center",
-            color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",fontSize:"14px"}}>❌ {error}</div>
+            color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",fontSize:"14px"}}>{error}</div>
         )}
         {student && !loading && (
           <div style={{background:"rgba(39,174,96,.08)",border:"2px solid rgba(39,174,96,.4)",
@@ -286,7 +444,7 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
   );
 }
 
-// ── ตัวเลือก MC ────────────────────────────────────────────
+// ── MC CHOICES ────────────────────────────────────────────
 function McChoices({ shuffled, selNow, onSelect, tc }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"9px"}}>
@@ -317,14 +475,14 @@ function McChoices({ shuffled, selNow, onSelect, tc }) {
   );
 }
 
-// ── ช่องพิมพ์อัตนัย ────────────────────────────────────────
+// ── TEXT INPUT ────────────────────────────────────────────
 function TextInput({ value, onChange, tc }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
         <span style={{background:`${tc}22`,border:`1px solid ${tc}55`,borderRadius:"20px",
           padding:"3px 12px",fontSize:"11px",color:tc,fontFamily:"'Cinzel',serif"}}>
-          ✏️ อัตนัย — พิมพ์คำตอบ
+          อัตนัย — พิมพ์คำตอบ
         </span>
       </div>
       <div style={{position:"relative"}}>
@@ -352,7 +510,6 @@ function TextInput({ value, onChange, tc }) {
   );
 }
 
-// ── badge แสดงคะแนนของข้อ ──────────────────────────────────
 function PointsBadge({ points, tc }) {
   if(!points || points === 1) return null;
   return (
@@ -368,20 +525,19 @@ function PointsBadge({ points, tc }) {
   );
 }
 
-// ── QUIZ SCREEN ────────────────────────────────────────────
+// ── QUIZ SCREEN ───────────────────────────────────────────
 function QuizScreen({ set, student, questions, onFinish, theme }) {
-  const [current, setCurrent]   = useState(0);
-  const [answers, setAnswers]   = useState({});
+  const [current, setCurrent] = useState(0);
+  const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(set.timeLimit);
   const timerRef = useRef(null);
   const tc = theme.themeColor;
-
   const maxScore = calcMaxScore(questions);
 
   const [allShuffled] = useState(()=>
     questions.map(q=>
       q.questionType==="text" ? []
-        : shuffle(q.choices.map((c,i)=>({text:c,origIndex:i})))
+      : shuffle(q.choices.map((c,i)=>({text:c,origIndex:i})))
     )
   );
 
@@ -390,7 +546,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
     const timeUsed = set.timeLimit - timeLeft;
     const results = questions.map((q,qi)=>{
       const shuffled = allShuffled[qi];
-      const ans      = answers[qi] ?? null;
+      const ans = answers[qi] ?? null;
       if(q.questionType==="text"){
         const isCorrect = ans!==null && ans!=="" && checkTextAnswer(ans, q.correctTextAnswer);
         return { question:q, selectedOrigIndex:null, userTextAnswer:ans, isCorrect, shuffledChoices:[] };
@@ -411,25 +567,18 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
 
   useEffect(()=>{
     if(questions[current]?.questionType==="text"){
-      setTimeout(() => (document.querySelector("input[inputmode='decimal']") as any)?.focus(), 100);
+      setTimeout(() => document.querySelector("input[inputmode='decimal']")?.focus(), 100);
     }
   },[current]);
 
-  const q        = questions[current];
+  const q = questions[current];
   const shuffled = allShuffled[current];
-  const selNow   = answers[current] ?? (q.questionType==="text" ? "" : null);
+  const selNow = answers[current] ?? (q.questionType==="text" ? "" : null);
   const answered = Object.keys(answers).filter(k=>answers[k]!==null&&answers[k]!=="").length;
-
-  // คะแนนที่ทำแล้ว (เฉพาะข้อที่ตอบแล้ว ยังไม่รู้ถูกผิด แค่นับ progress)
-  const currentScore = questions.reduce((sum,qs,i)=>{
-    return sum + (answers[i]!==undefined&&answers[i]!==null&&answers[i]!==""
-      ? (qs.points??1) : 0);
-  },0);
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
       padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
-
       {/* Header */}
       <div style={{background:"rgba(15,8,2,.92)",border:`1px solid ${tc}44`,
         borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
@@ -450,8 +599,8 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
         <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
           {questions.map((qs,i)=>{
             const isAnswered = answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
-            const isText     = qs.questionType==="text";
-            const pts        = qs.points ?? 1;
+            const isText = qs.questionType==="text";
+            const pts = qs.points ?? 1;
             return (
               <div key={i} onClick={()=>setCurrent(i)} title={`ข้อ ${i+1} (${pts} คะแนน)`} style={{
                 minWidth:"24px",height:"24px",borderRadius:"5px",cursor:"pointer",padding:"0 3px",
@@ -473,8 +622,6 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
       <div style={{flex:1,background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
         border:`2px solid ${tc}55`,borderRadius:"16px",padding:"20px",marginBottom:"12px",
         boxShadow:"0 10px 40px rgba(0,0,0,.6)"}}>
-
-        {/* badges แถวบน */}
         <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
           <PointsBadge points={q.points} tc={tc}/>
           {q.isRare && (
@@ -484,8 +631,6 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
               boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
           )}
         </div>
-
-        {/* โจทย์ */}
         <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
           padding:"10px",marginBottom:"16px",minHeight:"220px",
           display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -497,11 +642,9 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
               fontSize:"18px",textAlign:"center",margin:0,lineHeight:1.6}}>{q.setText}</p>
           ) : (
             <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"13px",
-              textAlign:"center",margin:0}}>📜 ข้อที่ {current+1}</p>
+              textAlign:"center",margin:0}}>ข้อที่ {current+1}</p>
           )}
         </div>
-
-        {/* ตัวเลือก */}
         {q.questionType==="text" ? (
           <div onKeyDown={e=>e.key==="Enter"&&current<questions.length-1&&setCurrent(c=>c+1)}>
             <TextInput value={selNow||""} onChange={val=>setAnswers(a=>({...a,[current]:val}))} tc={tc}/>
@@ -543,27 +686,35 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   );
 }
 
-// ── RESULT SCREEN ──────────────────────────────────────────
+// ── RESULT SCREEN ─────────────────────────────────────────
 function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
   const { results, timeUsed, timeUp, student, set, maxScore } = data;
-  const totalScore  = calcTotalScore(results);
-  const passed      = totalScore >= set.passingScore;
-  const rareOK      = results.filter(r=>r.question.isRare && r.isCorrect);
-  const correctCount= results.filter(r=>r.isCorrect).length;
+  const totalScore = calcTotalScore(results);
+  const passed = totalScore >= set.passingScore;
+  const isPerfect = totalScore === maxScore && maxScore > 0;
+  const rareOK = results.filter(r=>r.question.isRare && r.isCorrect);
+  const correctCount = results.filter(r=>r.isCorrect).length;
   const tc = theme.themeColor;
+
   const [showDetail, setShowDetail] = useState(false);
-  const [saving, setSaving]         = useState(true);
-  const [saveErr, setSaveErr]       = useState(false);
+  const [saving, setSaving] = useState(true);
+  const [saveErr, setSaveErr] = useState(false);
+
+  // ── Character state ──────────────────────────────
+  const [charData, setCharData] = useState(null);
+  const [showChar, setShowChar] = useState(false);
+  const charStatus = isPerfect ? "perfect" : passed ? "pass" : "fail";
 
   useEffect(()=>{
     (async()=>{
       try {
+        // บันทึกผล
         await apiPost({
           action:"saveResult", studentId:student.id,
           studentName:`${student.firstName} ${student.lastName}`,
           studentNickname:student.nickname, setName:set.id,
-          score:`${totalScore}/${maxScore}`,        // ← บันทึกเป็นคะแนน
-          correctCount:`${correctCount}/${results.length}`, // ← จำนวนข้อ
+          score:`${totalScore}/${maxScore}`,
+          correctCount:`${correctCount}/${results.length}`,
           passed:passed?"ผ่าน":"ไม่ผ่าน", timeUsed,
           correctIds:results.filter(r=>r.isCorrect).map(r=>r.question.id).join(","),
           wrongIds:results.filter(r=>!r.isCorrect).map(r=>r.question.id).join(","),
@@ -575,219 +726,277 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
         }
       } catch { setSaveErr(true); }
       setSaving(false);
+
+      // โหลด character data
+      try {
+        const charRes = await apiGet({ action:"getCharacter", setId:set.id });
+        if(charRes.character) {
+          setCharData(charRes.character);
+          setShowChar(true); // เด้งขึ้นมาหลังโหลดเสร็จ
+        }
+      } catch {
+        // ถ้าไม่มี character config ก็ไม่แสดง
+      }
     })();
   },[]);
 
-  // progress bar คะแนน
   const scorePct = maxScore > 0 ? (totalScore/maxScore)*100 : 0;
   const passingPct = maxScore > 0 ? (set.passingScore/maxScore)*100 : 0;
 
   return (
-    <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",
-      display:"flex",flexDirection:"column",alignItems:"center"}}>
-      <div style={{maxWidth:"560px",width:"100%",marginTop:"20px",marginBottom:"40px",
-        background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
-        borderRadius:"16px",padding:"32px 28px",
-        boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
+    <>
+      {/* Character Popup */}
+      {showChar && charData && (
+        <CharacterPopup
+          charData={charData}
+          status={charStatus}
+          onClose={()=>setShowChar(false)}
+          tc={tc}
+        />
+      )}
 
-        <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{fontSize:"56px",marginBottom:"6px"}}>{passed?"🏆":"⚔️"}</div>
-          <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"26px",fontWeight:700,
-            color:passed?"#27ae60":"#e74c3c",
-            textShadow:`0 0 20px ${passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
-            {passed?"ผ่านแล้ว!":"ยังไม่ผ่าน"}
-          </div>
-          {timeUp&&<div style={{color:"#e67e22",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>⏱ หมดเวลา</div>}
+      <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",
+        display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{maxWidth:"560px",width:"100%",marginTop:"20px",marginBottom:"40px",
+          background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
+          border:`2px solid ${passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
+          borderRadius:"16px",padding:"32px 28px",
+          boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
 
-          {/* คะแนนหลัก */}
-          <div style={{fontSize:"60px",fontWeight:900,fontFamily:"'Cinzel',serif",
-            color:passed?"#27ae60":"#e74c3c",lineHeight:1,marginTop:"12px"}}>
-            {totalScore}
-            <span style={{fontSize:"28px",color:"#6b5a3e"}}>/{maxScore}</span>
-          </div>
-          <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>
-            คะแนน · ผ่านที่ {set.passingScore} คะแนน
-          </div>
-
-          {/* Score bar */}
-          <div style={{marginTop:"12px",position:"relative"}}>
-            <div style={{width:"100%",height:"10px",background:"rgba(255,255,255,.08)",
-              borderRadius:"5px",overflow:"visible",position:"relative"}}>
-              <div style={{height:"100%",width:scorePct+"%",
-                background:`linear-gradient(90deg,${passed?"#27ae60":"#e74c3c"},${passed?"#2ecc71":"#e74c3c"})`,
-                borderRadius:"5px",transition:"width .8s ease",
-                boxShadow:`0 0 8px ${passed?"rgba(39,174,96,.6)":"rgba(231,76,60,.5)"}`}}/>
-              {/* เส้นผ่าน */}
-              <div style={{position:"absolute",top:"-4px",left:passingPct+"%",
-                width:"2px",height:"18px",background:"#f5e6c8",borderRadius:"1px",
-                transform:"translateX(-50%)"}}/>
+          <div style={{textAlign:"center",marginBottom:"24px"}}>
+            <div style={{fontSize:"56px",marginBottom:"6px"}}>
+              {isPerfect ? "🌟" : passed ? "🎉" : "😤"}
             </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:"4px"}}>
-              <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>0</span>
-              <span style={{color:"#f5e6c8",fontSize:"10px",fontFamily:"'Cinzel',serif",
-                position:"absolute",left:passingPct+"%",transform:"translateX(-50%)",marginTop:"0"}}>
-                เกณฑ์ {set.passingScore}
-              </span>
-              <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>{maxScore}</span>
+            <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"26px",fontWeight:700,
+              color:isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c",
+              textShadow:`0 0 20px ${isPerfect?"rgba(241,196,15,.5)":passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
+              {isPerfect ? "เต็มทุกข้อ!" : passed ? "ผ่านแล้ว!" : "ยังไม่ผ่าน"}
             </div>
-          </div>
+            {timeUp&&<div style={{color:"#e67e22",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>⏱ หมดเวลา</div>}
 
-          <div style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginTop:"12px"}}>
-            {student.nickname} · {set.id} · ใช้เวลา {formatTime(timeUsed)}
-          </div>
-          <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
-            color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
-            {saving?"💾 กำลังบันทึก...":saveErr?"⚠️ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
-          {[
-            ["✅ ข้อถูก",`${correctCount}/${results.length}`,"#27ae60"],
-            ["⭐ คะแนน",`${totalScore}/${maxScore}`,tc],
-            ["⏱ เวลา",formatTime(timeUsed),"#a89070"],
-            ["✦ หายาก",`${rareOK.length} ข้อ`,"#9b59b6"],
-          ].map(([k,v,c])=>(
-            <div key={k} style={{background:"rgba(255,255,255,.02)",
-              border:"1px solid rgba(212,175,55,.12)",borderRadius:"10px",
-              padding:"12px",textAlign:"center"}}>
-              <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
-              <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
+            <div style={{fontSize:"60px",fontWeight:900,fontFamily:"'Cinzel',serif",
+              color:isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c",lineHeight:1,marginTop:"12px"}}>
+              {totalScore}
+              <span style={{fontSize:"28px",color:"#6b5a3e"}}>/{maxScore}</span>
             </div>
-          ))}
-        </div>
+            <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>
+              คะแนน · ผ่านที่ {set.passingScore} คะแนน
+            </div>
 
-        {rareOK.length>0&&(
-          <div style={{background:"rgba(74,0,128,.2)",border:"1px solid rgba(155,89,182,.5)",
-            borderRadius:"10px",padding:"12px 16px",marginBottom:"16px",
-            display:"flex",alignItems:"center",gap:"10px"}}>
-            <span style={{fontSize:"18px"}}>✦</span>
-            <div>
-              <div style={{color:"#d7bde2",fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:700}}>
-                โจทย์หายากผ่าน {rareOK.length} ข้อ!
+            {/* Score bar */}
+            <div style={{marginTop:"12px",position:"relative"}}>
+              <div style={{width:"100%",height:"10px",background:"rgba(255,255,255,.08)",
+                borderRadius:"5px",overflow:"visible",position:"relative"}}>
+                <div style={{height:"100%",width:scorePct+"%",
+                  background:`linear-gradient(90deg,${isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c"},${isPerfect?"#f39c12":passed?"#2ecc71":"#e74c3c"})`,
+                  borderRadius:"5px",transition:"width .8s ease",
+                  boxShadow:`0 0 8px ${isPerfect?"rgba(241,196,15,.6)":passed?"rgba(39,174,96,.6)":"rgba(231,76,60,.5)"}`}}/>
+                <div style={{position:"absolute",top:"-4px",left:passingPct+"%",
+                  width:"2px",height:"18px",background:"#f5e6c8",borderRadius:"1px",
+                  transform:"translateX(-50%)"}}/>
               </div>
-              <div style={{color:"#7d3c98",fontSize:"11px",fontFamily:"'Sarabun',sans-serif"}}>
-                ความสำเร็จถูกบันทึกแล้ว
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:"4px"}}>
+                <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>0</span>
+                <span style={{color:"#f5e6c8",fontSize:"10px",fontFamily:"'Cinzel',serif",
+                  position:"absolute",left:passingPct+"%",transform:"translateX(-50%)",marginTop:"0"}}>
+                  เกณฑ์ {set.passingScore}
+                </span>
+                <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>{maxScore}</span>
               </div>
             </div>
+
+            <div style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginTop:"12px"}}>
+              {student.nickname} · {set.id} · ใช้เวลา {formatTime(timeUsed)}
+            </div>
+            <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
+              color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
+              {saving?"⏳ กำลังบันทึก...":saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
+            </div>
           </div>
-        )}
 
-        <div style={{marginBottom:"16px"}}>
-          <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
-            width:"100%",padding:"13px",
-            background:showDetail?"rgba(212,175,55,.15)":"rgba(212,175,55,.06)",
-            border:`1px solid ${tc}55`,borderRadius:"10px",color:tc,
-            fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
-            {showDetail?"▲ ซ่อนเฉลย":"▼ ดูเฉลยทุกข้อ"}
-          </button>
-        </div>
+          {/* Stats */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+            {[
+              ["✓ ข้อถูก",`${correctCount}/${results.length}`,"#27ae60"],
+              ["★ คะแนน",`${totalScore}/${maxScore}`,tc],
+              ["⏱ เวลา",formatTime(timeUsed),"#a89070"],
+              ["✦ หายาก",`${rareOK.length} ข้อ`,"#9b59b6"],
+            ].map(([k,v,c])=>(
+              <div key={k} style={{background:"rgba(255,255,255,.02)",
+                border:"1px solid rgba(212,175,55,.12)",borderRadius:"10px",
+                padding:"12px",textAlign:"center"}}>
+                <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
+                <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
+              </div>
+            ))}
+          </div>
 
-        {showDetail&&(
-          <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"20px"}}>
-            {results.map((r,i)=>{
-              const pts = r.question.points ?? 1;
-              let correctText, selectedText;
-              if(r.question.questionType==="text"){
-                correctText  = String(r.question.correctTextAnswer ?? "-");
-                selectedText = r.userTextAnswer || "ไม่ได้ตอบ";
-              } else {
-                correctText  = r.shuffledChoices.find(c=>c.origIndex===r.question.answer)?.text ?? "-";
-                selectedText = r.selectedOrigIndex!==null
-                  ? r.shuffledChoices.find(c=>c.origIndex===r.selectedOrigIndex)?.text ?? "-"
-                  : "ไม่ได้ตอบ";
-              }
-              return (
-                <div key={i} style={{
-                  background:r.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
-                  border:`1px solid ${r.isCorrect?"rgba(39,174,96,.3)":"rgba(231,76,60,.3)"}`,
-                  borderRadius:"10px",padding:"14px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
-                    <span style={{fontFamily:"'Cinzel',serif",fontSize:"12px",
-                      color:r.isCorrect?"#27ae60":"#e74c3c"}}>
-                      {r.isCorrect?"✅":"❌"} ข้อ {i+1}
-                    </span>
-                    {/* แสดงคะแนนที่ได้/เสีย */}
-                    <span style={{
-                      background:r.isCorrect?`rgba(39,174,96,.2)`:`rgba(231,76,60,.15)`,
-                      border:`1px solid ${r.isCorrect?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`,
-                      borderRadius:"12px",padding:"1px 8px",fontSize:"11px",
-                      color:r.isCorrect?"#27ae60":"#e74c3c",fontFamily:"'Cinzel',serif",fontWeight:700}}>
-                      {r.isCorrect?"+":"-"}{pts} คะแนน
-                    </span>
-                    {r.question.questionType==="text"&&(
-                      <span style={{background:`${tc}22`,border:`1px solid ${tc}44`,
-                        borderRadius:"10px",padding:"1px 8px",fontSize:"10px",color:tc}}>✏️ อัตนัย</span>
-                    )}
-                    {r.question.isRare&&(
-                      <span style={{color:"#9b59b6",fontSize:"11px"}}>✦ หายาก</span>
-                    )}
-                  </div>
-                  <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",
-                    color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
-                    {r.isCorrect
-                      ? <span>✓ ตอบถูก: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
-                      : <span>
-                          คุณตอบ: <span style={{color:"#e74c3c"}}>{selectedText}</span>
-                          {" · "}เฉลย: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span>
-                        </span>
-                    }
-                  </div>
-                  <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-                    {r.question.linkText&&(
-                      <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{
-                        fontSize:"12px",color:tc,textDecoration:"none",
-                        padding:"4px 12px",border:`1px solid ${tc}55`,
-                        borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📝 เฉลยเขียน</a>
-                    )}
-                    {r.question.linkVideo&&(
-                      <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{
-                        fontSize:"12px",color:"#e74c3c",textDecoration:"none",
-                        padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
-                        borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶️ เฉลยวิดีโอ</a>
-                    )}
-                  </div>
+          {rareOK.length>0&&(
+            <div style={{background:"rgba(74,0,128,.2)",border:"1px solid rgba(155,89,182,.5)",
+              borderRadius:"10px",padding:"12px 16px",marginBottom:"16px",
+              display:"flex",alignItems:"center",gap:"10px"}}>
+              <span style={{fontSize:"18px"}}>✦</span>
+              <div>
+                <div style={{color:"#d7bde2",fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:700}}>
+                  โจทย์หายากผ่าน {rareOK.length} ข้อ!
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:"8px",marginTop:"8px"}}>
-          {!isDirectLink&&(
-            <button type="button" onClick={onHome} style={{
-              flex:1,padding:"13px",background:"rgba(212,175,55,.06)",
-              border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
-              fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
-              🏠 หน้าหลัก
-            </button>
+                <div style={{color:"#7d3c98",fontSize:"11px",fontFamily:"'Sarabun',sans-serif"}}>
+                  ความสำเร็จถูกบันทึกแล้ว
+                </div>
+              </div>
+            </div>
           )}
-          <button type="button" onClick={onRetry} style={{
-            flex:2,padding:"13px",
-            background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
-            border:"none",borderRadius:"10px",color:"#1a0e00",
-            fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer",
-            boxShadow:`0 4px 20px ${tc}33`}}>
-            🔄 ทำใหม่
-          </button>
+
+          {/* ปุ่มดูเฉลย */}
+          <div style={{marginBottom:"16px"}}>
+            <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
+              width:"100%",padding:"13px",
+              background:showDetail?"rgba(212,175,55,.15)":"rgba(212,175,55,.06)",
+              border:`1px solid ${tc}55`,borderRadius:"10px",color:tc,
+              fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
+              {showDetail?"▲ ซ่อนเฉลย":"▼ ดูเฉลยทุกข้อ"}
+            </button>
+          </div>
+
+          {showDetail&&(
+            <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"20px"}}>
+              {results.map((r,i)=>{
+                const pts = r.question.points ?? 1;
+                let correctText, selectedText;
+                if(r.question.questionType==="text"){
+                  correctText = String(r.question.correctTextAnswer ?? "-");
+                  selectedText = r.userTextAnswer || "ไม่ได้ตอบ";
+                } else {
+                  correctText = r.shuffledChoices.find(c=>c.origIndex===r.question.answer)?.text ?? "-";
+                  selectedText = r.selectedOrigIndex!==null
+                    ? r.shuffledChoices.find(c=>c.origIndex===r.selectedOrigIndex)?.text ?? "-"
+                    : "ไม่ได้ตอบ";
+                }
+                return (
+                  <div key={i} style={{
+                    background:r.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
+                    border:`1px solid ${r.isCorrect?"rgba(39,174,96,.3)":"rgba(231,76,60,.3)"}`,
+                    borderRadius:"10px",padding:"14px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
+                      <span style={{fontFamily:"'Cinzel',serif",fontSize:"12px",
+                        color:r.isCorrect?"#27ae60":"#e74c3c"}}>
+                        {r.isCorrect?"✓":"✗"} ข้อ {i+1}
+                      </span>
+                      <span style={{
+                        background:r.isCorrect?"rgba(39,174,96,.2)":"rgba(231,76,60,.15)",
+                        border:`1px solid ${r.isCorrect?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`,
+                        borderRadius:"12px",padding:"1px 8px",fontSize:"11px",
+                        color:r.isCorrect?"#27ae60":"#e74c3c",fontFamily:"'Cinzel',serif",fontWeight:700}}>
+                        {r.isCorrect?"+":"-"}{pts} คะแนน
+                      </span>
+                      {r.question.questionType==="text"&&(
+                        <span style={{background:`${tc}22`,border:`1px solid ${tc}44`,
+                          borderRadius:"10px",padding:"1px 8px",fontSize:"10px",color:tc}}>✏ อัตนัย</span>
+                      )}
+                      {r.question.isRare&&(
+                        <span style={{color:"#9b59b6",fontSize:"11px"}}>✦ หายาก</span>
+                      )}
+                    </div>
+                    <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",
+                      color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
+                      {r.isCorrect
+                        ? <span>✓ ตอบถูก: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
+                        : <span>
+                            คุณตอบ: <span style={{color:"#e74c3c"}}>{selectedText}</span>
+                            {" · "}เฉลย: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span>
+                          </span>
+                      }
+                    </div>
+                    <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                      {r.question.linkText&&(
+                        <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{
+                          fontSize:"12px",color:tc,textDecoration:"none",
+                          padding:"4px 12px",border:`1px solid ${tc}55`,
+                          borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
+                      )}
+                      {r.question.linkVideo&&(
+                        <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{
+                          fontSize:"12px",color:"#e74c3c",textDecoration:"none",
+                          padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
+                          borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── ปุ่มหลัก: หน้าหลัก / ทำใหม่ ── */}
+          <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
+            {!isDirectLink&&(
+              <button type="button" onClick={onHome} style={{
+                flex:1,padding:"13px",background:"rgba(212,175,55,.06)",
+                border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
+                fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
+                หน้าหลัก
+              </button>
+            )}
+            <button type="button" onClick={onRetry} style={{
+              flex:2,padding:"13px",
+              background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
+              border:"none",borderRadius:"10px",color:"#1a0e00",
+              fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer",
+              boxShadow:`0 4px 20px ${tc}33`}}>
+              ทำใหม่
+            </button>
+          </div>
+
+          {/* ── ปุ่ม Looker Studio (ด้านล่างสุด แยกต่างหาก) ── */}
+          <a
+            href={LOOKER_STUDIO_URL}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display:"flex",
+              alignItems:"center",
+              justifyContent:"center",
+              gap:"10px",
+              width:"100%",
+              padding:"13px",
+              boxSizing:"border-box",
+              background:"linear-gradient(135deg,rgba(66,133,244,.15),rgba(66,133,244,.05))",
+              border:"1px solid rgba(66,133,244,.4)",
+              borderRadius:"10px",
+              color:"#7ab3f5",
+              fontFamily:"'Cinzel',serif",
+              fontSize:"14px",
+              fontWeight:600,
+              textDecoration:"none",
+              transition:"all .2s",
+              boxShadow:"0 2px 12px rgba(66,133,244,.15)",
+            }}
+          >
+            {/* Looker Studio icon */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="#7ab3f5" strokeWidth="1.5"/>
+              <path d="M8 12 Q12 6 16 12 Q12 18 8 12Z" fill="#7ab3f5" opacity="0.7"/>
+              <circle cx="12" cy="12" r="2.5" fill="#7ab3f5"/>
+            </svg>
+            ดูรายงานผลใน Looker Studio
+          </a>
+
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-// ── MAIN APP ───────────────────────────────────────────────
+// ── MAIN APP ──────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen]       = useState("init");
-  const [selectedSet, setSet]     = useState(null);
-  const [student, setStudent]     = useState(null);
+  const [screen, setScreen] = useState("init");
+  const [selectedSet, setSet] = useState(null);
+  const [student, setStudent] = useState(null);
   const [questions, setQuestions] = useState([]);
-  const [resultData, setResult]   = useState(null);
+  const [resultData, setResult] = useState(null);
   const [loadError, setLoadError] = useState("");
-  const [theme, setTheme]         = useState(DEFAULT_THEME);
-  const [isDirectLink]            = useState(()=>!!getSetFromUrl());
+  const [theme, setTheme] = useState(DEFAULT_THEME);
+  const [isDirectLink] = useState(()=>!!getSetFromUrl());
 
   useEffect(()=>{
     const setId = getSetFromUrl();
@@ -806,24 +1015,23 @@ export default function App() {
     setLoadError("");
     Promise.all([
       apiGet({ action:"getQuestions", setName:selectedSet.id }),
-      apiGet({ action:"getConfig",    setId:selectedSet.id }),
+      apiGet({ action:"getConfig", setId:selectedSet.id }),
     ]).then(([qData,cfgData])=>{
       if(!qData.questions?.length){ setLoadError("ไม่พบข้อสอบในชุด "+selectedSet.id); return; }
       const cfg = buildTheme(cfgData.config);
-const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
-setQuestions(
-  shouldShuffle
-    ? selectQuestions(qData.questions, selectedSet.total)
-    : orderQuestions(qData.questions, selectedSet.total)
-);
-setTheme(cfg);
-      setTheme(buildTheme(cfgData.config));
+      const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
+      setQuestions(
+        shouldShuffle
+          ? selectQuestions(qData.questions, selectedSet.total)
+          : orderQuestions(qData.questions, selectedSet.total)
+      );
+      setTheme(cfg);
       setScreen("quiz");
     }).catch(()=>setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
   },[screen]);
 
   const goRetry = ()=>{ setQuestions([]); setResult(null); setScreen("loading"); };
-  const goHome  = ()=>{
+  const goHome = ()=>{
     setResult(null); setQuestions([]);
     if(isDirectLink){ setStudent(null); setScreen("login"); }
     else { setSet(null); setStudent(null); setScreen("setSelect"); }
@@ -872,7 +1080,7 @@ setTheme(cfg);
                   background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
                   border:`2px solid ${tc}55`,borderRadius:"16px",padding:"32px",
                   boxShadow:"0 20px 60px rgba(0,0,0,.8)",textAlign:"center",position:"relative",zIndex:1}}>
-                  <p style={{color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",marginBottom:"20px"}}>❌ {loadError}</p>
+                  <p style={{color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",marginBottom:"20px"}}>⚠ {loadError}</p>
                   <button onClick={goHome} style={{width:"100%",padding:"12px",background:`${tc}11`,
                     border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
                     fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>กลับหน้าหลัก</button>
