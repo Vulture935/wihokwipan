@@ -32,7 +32,7 @@ function getSetFromUrl() {
   catch { return null; }
 }
 
-async function apiGet(params) {
+async function apiGet(params: any) {
   const query = new URLSearchParams(
     Object.entries(params).reduce((acc,[k,v]) => { acc[k]=String(v); return acc; }, {})
   );
