@@ -54,7 +54,7 @@ function shuffle(arr) {
 function selectQuestions(questions, count) {
   const groups={};
   questions.forEach(q=>{if(!groups[q.groupId])groups[q.groupId]=[];groups[q.groupId].push(q);});
-  return shuffle(Object.values(groups).map((g)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+  return shuffle(Object.values(groups).map((g: any)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
 }
 
 function orderQuestions(questions, count) {
