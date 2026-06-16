@@ -19,6 +19,7 @@ const QUIZ_SETS = [
   { id:"SPR-266", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2566", total:10, passingScore:8, timeLimit:30*60 },
   { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:27, passingScore:36, timeLimit:90*60 },
   { id:"FT-BASIC1", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ตัวประกอบ + จำนวนเฉพาะ", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC2", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
   { id:"FT-BASIC3", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ แบ่งของ + สี่เหลี่ยม 2 อัน", total:10, passingScore:8, timeLimit:30*60 },
   { id:"FR-BASIC1", name:"เศษส่วน ป.6 เข้า ม.1 โจทย์ยอดนิยม เศษส่วน", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SKR-166-BB", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับบาร์บี้", total:20, passingScore:16, timeLimit:60*60 },
