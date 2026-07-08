@@ -22,6 +22,7 @@ const QUIZ_SETS = [
   { id:"FT-BASIC2", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
   { id:"FT-BASIC3", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ แบ่งของ + สี่เหลี่ยม 2 อัน", total:10, passingScore:8, timeLimit:30*60 },
   { id:"FT-BASIC4", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. ปักเสา", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC5", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. รวม", total:10, passingScore:8, timeLimit:30*60 },
   { id:"FR-BASIC1", name:"เศษส่วน ป.6 เข้า ม.1 โจทย์ยอดนิยม เศษส่วน", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SKR-166-BB", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับบาร์บี้", total:20, passingScore:16, timeLimit:60*60 },
 ];
