@@ -464,7 +464,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   const [allShuffled]=useState(()=>
     questions.map(q=>q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))))
   );
-  const finish=useCallback((timeUp=false)=>{
+const finish=useCallback((timeUp=false)=>{
     clearInterval(timerRef.current);
     const timeUsed=set.timeLimit-timeLeft;
     const results=questions.map((q,qi)=>{
@@ -489,7 +489,8 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
 
   useEffect(()=>{
     if(questions[current]?.questionType==="text")
-      setTimeout(()=>document.querySelector("input[inputmode='decimal']")?.focus(),100);
+      // แก้ไขจุดนี้โดยการครอบวงเล็บและเติม as HTMLInputElement เข้าไปครับ
+      setTimeout(()=>(document.querySelector("input[inputmode='decimal']") as HTMLInputElement)?.focus(),100);
   },[current]);
 
   const q=questions[current];
