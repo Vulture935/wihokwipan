@@ -197,14 +197,20 @@ function CharacterPopup({ charData, status, onClose, tc }) {
           boxShadow:`0 0 12px ${statusColor}44`}}>
           {status==="perfect"?"★ ได้เต็ม!":status==="pass"?"✓ ผ่านแล้ว!":"✗ ยังไม่ผ่าน"}
         </div>
-        {imageUrl&&(
-          <div style={{margin:"0 auto 16px",width:"200px",height:"200px",borderRadius:"16px",
-            overflow:"hidden",border:`2px solid ${statusColor}44`,boxShadow:`0 0 30px ${statusColor}33`,
-            background:"rgba(0,0,0,0.3)"}}>
-            <img src={imageUrl} alt="character" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
-              onError={e=>{e.target.style.display="none";}}/>
-          </div>
-        )}
+        {imageUrl && (
+        <div style={{
+        margin: "0 auto 16px", width: "200px", height: "200px", borderRadius: "16px",
+        overflow: "hidden", border: `2px solid ${statusColor}44`, boxShadow: `0 0 30px ${statusColor}33`,
+        background: "rgba(0,0,0,0.3)"
+        }}>
+    <img 
+      src={imageUrl} 
+      alt="character" 
+      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      onError={e => { e.currentTarget.style.display = "none"; }} 
+    />
+  </div>
+)}
         <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",lineHeight:1.6,
           margin:"0 0 20px",textShadow:`0 0 10px ${statusColor}44`}}>{message}</p>
         <button onClick={handleClose} style={{width:"100%",padding:"12px",
