@@ -60,10 +60,17 @@ function shuffle(arr) {
   for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
   return a;
 }
-function selectQuestions(questions, count) {
-  const groups={};
-  questions.forEach(q=>{ if(!groups[q.groupId]) groups[q.groupId]=[]; groups[q.groupId].push(q); });
-  return shuffle(Object.values(groups).map(g=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+function selectQuestions(questions: any[], count: number) {
+  // 1. เติม Record<string, any[]> เพื่อบอกว่า Object นี้มีค่า value เป็น Array
+  const groups: Record<string, any[]> = {}; 
+
+  questions.forEach(q => { 
+    if (!groups[q.groupId]) groups[q.groupId] = []; 
+    groups[q.groupId].push(q); 
+  });
+
+  // 2. ตอนนี้ TypeScript จะรู้แล้วว่า g คือ Array และยอมให้เรียกใช้ g.length ได้
+  return shuffle(Object.values(groups).map(g => g[Math.floor(Math.random() * g.length)])).slice(0, count);
 }
 function orderQuestions(questions, count) {
   const groups={}, order=[];
