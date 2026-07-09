@@ -6,7 +6,6 @@ const APPS_SCRIPT_URL =
 const LOOKER_STUDIO_URL =
   "https://datastudio.google.com/reporting/c1d52161-5387-4f00-bcda-b70b54116fc5/page/p_h1rlukz72d";
 
-// ── QUIZ_SETS ─────────────────────────────────────────────
 const QUIZ_SETS = [
   { id:"EQ-BASIC5", name:"สมการ ป.6 เข้า ม.1 สมการ เงิน คน สัตว์", total:10, passingScore:8, timeLimit:30*60 },
   { id:"EQ-BASIC4", name:"สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
@@ -32,101 +31,94 @@ const DEFAULT_THEME = {
   bgColor:"#0d0803", bgImageUrl:"",
 };
 
+// ── URL helpers ───────────────────────────────────────────
 function getSetFromUrl() {
   try { return new URLSearchParams(window.location.search).get("set") || null; }
   catch { return null; }
 }
+function getModeFromUrl() {
+  try { return new URLSearchParams(window.location.search).get("mode") || "normal"; }
+  catch { return "normal"; }
+}
 
-async function apiGet(params: any) {
+// ── API ───────────────────────────────────────────────────
+async function apiGet(params) {
   const query = new URLSearchParams(
-    Object.entries(params).reduce((acc,[k,v]) => { acc[k]=String(v); return acc; }, {})
+    Object.entries(params).reduce((acc,[k,v])=>{ acc[k]=String(v); return acc; },{})
   );
   const res = await fetch(`${APPS_SCRIPT_URL}?${query}`);
   return res.json();
 }
-
 async function apiPost(body) {
   const res = await fetch(APPS_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) });
   return res.json();
 }
 
+// ── Utils ─────────────────────────────────────────────────
 function shuffle(arr) {
   const a=[...arr];
   for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
   return a;
 }
-
 function selectQuestions(questions, count) {
   const groups={};
-  questions.forEach(q=>{if(!groups[q.groupId])groups[q.groupId]=[];groups[q.groupId].push(q);});
-  return shuffle(Object.values(groups).map((g: any)=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
+  questions.forEach(q=>{ if(!groups[q.groupId]) groups[q.groupId]=[]; groups[q.groupId].push(q); });
+  return shuffle(Object.values(groups).map(g=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
 }
-
 function orderQuestions(questions, count) {
-  const groups = {};
-  const groupOrder = [];
-  questions.forEach(q => {
-    if (!groups[q.groupId]) { groups[q.groupId] = []; groupOrder.push(q.groupId); }
-    groups[q.groupId].push(q);
-  });
-  return groupOrder.map(gid => { const g = groups[gid]; return g[Math.floor(Math.random()*g.length)]; }).slice(0, count);
+  const groups={}, order=[];
+  questions.forEach(q=>{ if(!groups[q.groupId]){groups[q.groupId]=[];order.push(q.groupId);} groups[q.groupId].push(q); });
+  return order.map(gid=>{ const g=groups[gid]; return g[Math.floor(Math.random()*g.length)]; }).slice(0,count);
 }
-
 function formatTime(s) {
   return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`;
 }
-
 function buildTheme(cfg) {
   if(!cfg) return DEFAULT_THEME;
   return {...DEFAULT_THEME,...cfg};
 }
-
 function calcTotalScore(results) {
-  return results.reduce((sum, r) => sum + (r.isCorrect ? (r.question.points ?? 1) : 0), 0);
+  return results.reduce((sum,r)=>sum+(r.isCorrect?(r.question.points??1):0),0);
 }
-
 function calcMaxScore(questions) {
-  return questions.reduce((sum, q) => sum + (q.points ?? 1), 0);
+  return questions.reduce((sum,q)=>sum+(q.points??1),0);
 }
-
 function normalizeNumber(str) {
   if(!str && str!==0) return null;
-  const s = String(str).trim().replace(/,/g,".");
-  const n = parseFloat(s);
-  return isNaN(n) ? null : n;
+  const s=String(str).trim().replace(/,/g,".");
+  const n=parseFloat(s);
+  return isNaN(n)?null:n;
 }
-
 function checkTextAnswer(userInput, correctAnswer) {
-  const u = normalizeNumber(userInput);
-  const c = normalizeNumber(correctAnswer);
-  if(u !== null && c !== null) return u === c;
-  return String(userInput).trim().toLowerCase() === String(correctAnswer).trim().toLowerCase();
+  const u=normalizeNumber(userInput), c=normalizeNumber(correctAnswer);
+  if(u!==null&&c!==null) return u===c;
+  return String(userInput).trim().toLowerCase()===String(correctAnswer).trim().toLowerCase();
 }
-
-// ── getFastImageUrl (same as Apps Script) ────────────────
 function getFastImageUrl(fileId) {
-  if (!fileId) return "";
-  let id = String(fileId).trim();
-  if (id.includes("/d/")) id = id.split("/d/")[1].split("/")[0];
-  else if (id.includes("id=")) id = id.split("id=")[1].split("&")[0];
+  if(!fileId) return "";
+  let id=String(fileId).trim();
+  if(id.includes("/d/")) id=id.split("/d/")[1].split("/")[0];
+  else if(id.includes("id=")) id=id.split("id=")[1].split("&")[0];
   return `https://lh3.googleusercontent.com/d/${id}`;
+}
+function pickChallengeQuestion(pool, usedIds) {
+  const available=pool.filter(q=>!usedIds.has(q.id));
+  if(!available.length) return null;
+  return available[Math.floor(Math.random()*available.length)];
 }
 
 // ── Particles ─────────────────────────────────────────────
 function Particles({ color }) {
-  const pts = useRef([...Array(18)].map(()=>({
-    w:Math.random()*2.5+0.5, l:Math.random()*100, t:Math.random()*100,
-    d:Math.random()*8+6, delay:Math.random()*6,
+  const pts=useRef([...Array(18)].map(()=>({
+    w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
+    d:Math.random()*8+6,delay:Math.random()*6,
   }))).current;
   return (
     <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
       {pts.map((p,i)=>(
-        <div key={i} style={{
-          position:"absolute",width:p.w+"px",height:p.w+"px",
-          borderRadius:"50%",background:color+"55",
-          left:p.l+"%",top:p.t+"%",
-          animation:`pfloat ${p.d}s ease-in-out ${p.delay}s infinite`,
-        }}/>
+        <div key={i} style={{position:"absolute",width:p.w+"px",height:p.w+"px",borderRadius:"50%",
+          background:color+"55",left:p.l+"%",top:p.t+"%",
+          animation:`pfloat ${p.d}s ease-in-out ${p.delay}s infinite`}}/>
       ))}
     </div>
   );
@@ -153,163 +145,90 @@ function Spinner({ color }) {
   );
 }
 
-// ── CHARACTER POPUP ───────────────────────────────────────
-// แสดงรูปตัวละคร + ข้อความ พร้อม animation เด้งขึ้นมา
-// status: "pass" | "fail" | "perfect"
-function CharacterPopup({ charData, status, onClose, tc }) {
-  const [visible, setVisible] = useState(false);
-  const [closing, setClosing] = useState(false);
-
-  useEffect(() => {
-    // เด้งขึ้นมาหลัง 300ms (ให้ result render ก่อน)
-    const t = setTimeout(() => setVisible(true), 300);
-    return () => clearTimeout(t);
-  }, []);
-
-  const handleClose = () => {
-    setClosing(true);
-    setTimeout(() => onClose(), 400);
-  };
-
-  if (!charData) return null;
-
-  let imageId = "";
-  let message = "";
-  if (status === "perfect") {
-    imageId = charData.perfectImageId || charData.passImageId || "";
-    message = charData.perfectMsg || charData.passMsg || "เยี่ยมมาก! ได้เต็มทุกข้อ! 🌟";
-  } else if (status === "pass") {
-    imageId = charData.passImageId || "";
-    message = charData.passMsg || "ผ่านแล้ว! ยอดเยี่ยม! 🎉";
-  } else {
-    imageId = charData.failImageId || "";
-    message = charData.failMsg || "ยังไม่ผ่าน สู้ต่อไปนะ! 💪";
-  }
-
-  const imageUrl = getFastImageUrl(imageId);
-
-  // สีตาม status
-  const statusColor = status === "perfect" ? "#f1c40f"
-    : status === "pass" ? "#27ae60"
-    : "#e74c3c";
-
-  const statusGlow = status === "perfect" ? "rgba(241,196,15,0.6)"
-    : status === "pass" ? "rgba(39,174,96,0.5)"
-    : "rgba(231,76,60,0.4)";
-
+function PointsBadge({ points, tc }) {
+  if(!points||points===1) return null;
   return (
-    <div
-      onClick={handleClose}
-      style={{
-        position:"fixed", inset:0, zIndex:1000,
-        background:"rgba(0,0,0,0.75)",
-        backdropFilter:"blur(4px)",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        padding:"20px",
-        opacity: visible && !closing ? 1 : 0,
-        transition:"opacity 0.4s ease",
-        cursor:"pointer",
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          maxWidth:"360px", width:"100%",
-          background:"linear-gradient(160deg,rgba(20,12,5,.98),rgba(38,22,8,.98))",
-          border:`2px solid ${statusColor}66`,
-          borderRadius:"20px",
-          padding:"28px 24px 24px",
-          boxShadow:`0 0 60px ${statusGlow}, 0 20px 60px rgba(0,0,0,.9)`,
-          position:"relative",
-          transform: visible && !closing ? "translateY(0) scale(1)" : "translateY(60px) scale(0.85)",
-          opacity: visible && !closing ? 1 : 0,
-          transition:"transform 0.5s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s ease",
-          textAlign:"center",
-          cursor:"default",
-        }}
-      >
-        {/* ปุ่มปิด */}
-        <button
-          onClick={handleClose}
-          style={{
-            position:"absolute", top:"12px", right:"14px",
-            background:"none", border:"none",
-            color:"#6b5a3e", fontSize:"20px",
-            cursor:"pointer", lineHeight:1, padding:"4px",
-          }}
-        >×</button>
+    <span style={{background:`linear-gradient(135deg,${tc}33,${tc}11)`,border:`1px solid ${tc}66`,
+      borderRadius:"20px",padding:"3px 12px",fontSize:"12px",color:tc,
+      fontFamily:"'Cinzel',serif",fontWeight:700,boxShadow:`0 0 8px ${tc}33`}}>
+      ★ {points} คะแนน
+    </span>
+  );
+}
 
-        {/* Status badge */}
-        <div style={{
-          display:"inline-block",
-          background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
-          border:`1px solid ${statusColor}66`,
-          borderRadius:"20px", padding:"4px 16px",
-          fontSize:"12px", color:statusColor,
-          fontFamily:"'Cinzel',serif", fontWeight:700,
-          marginBottom:"16px",
-          boxShadow:`0 0 12px ${statusColor}44`,
-        }}>
-          {status === "perfect" ? "★ ได้เต็ม!" : status === "pass" ? "✓ ผ่านแล้ว!" : "✗ ยังไม่ผ่าน"}
+// ── Character Popup ───────────────────────────────────────
+function CharacterPopup({ charData, status, onClose, tc }) {
+  const [visible,setVisible]=useState(false);
+  const [closing,setClosing]=useState(false);
+  useEffect(()=>{ const t=setTimeout(()=>setVisible(true),300); return()=>clearTimeout(t); },[]);
+  const handleClose=()=>{ setClosing(true); setTimeout(()=>onClose(),400); };
+  if(!charData) return null;
+  let imageId="", message="";
+  if(status==="perfect"){ imageId=charData.perfectImageId||charData.passImageId||""; message=charData.perfectMsg||"เยี่ยมมาก! ได้เต็มทุกข้อ! 🌟"; }
+  else if(status==="pass"){ imageId=charData.passImageId||""; message=charData.passMsg||"ผ่านแล้ว! ยอดเยี่ยม! 🎉"; }
+  else { imageId=charData.failImageId||""; message=charData.failMsg||"ยังไม่ผ่าน สู้ต่อไปนะ! 💪"; }
+  const imageUrl=getFastImageUrl(imageId);
+  const statusColor=status==="perfect"?"#f1c40f":status==="pass"?"#27ae60":"#e74c3c";
+  const statusGlow=status==="perfect"?"rgba(241,196,15,0.6)":status==="pass"?"rgba(39,174,96,0.5)":"rgba(231,76,60,0.4)";
+  return (
+    <div onClick={handleClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.75)",
+      backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px",
+      opacity:visible&&!closing?1:0,transition:"opacity 0.4s ease",cursor:"pointer"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:"360px",width:"100%",
+        background:"linear-gradient(160deg,rgba(20,12,5,.98),rgba(38,22,8,.98))",
+        border:`2px solid ${statusColor}66`,borderRadius:"20px",padding:"28px 24px 24px",
+        boxShadow:`0 0 60px ${statusGlow},0 20px 60px rgba(0,0,0,.9)`,position:"relative",
+        transform:visible&&!closing?"translateY(0) scale(1)":"translateY(60px) scale(0.85)",
+        opacity:visible&&!closing?1:0,
+        transition:"transform 0.5s cubic-bezier(0.34,1.56,0.64,1),opacity 0.4s ease",
+        textAlign:"center",cursor:"default"}}>
+        <button onClick={handleClose} style={{position:"absolute",top:"12px",right:"14px",
+          background:"none",border:"none",color:"#6b5a3e",fontSize:"20px",cursor:"pointer",lineHeight:1,padding:"4px"}}>×</button>
+        <div style={{display:"inline-block",background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
+          border:`1px solid ${statusColor}66`,borderRadius:"20px",padding:"4px 16px",
+          fontSize:"12px",color:statusColor,fontFamily:"'Cinzel',serif",fontWeight:700,marginBottom:"16px",
+          boxShadow:`0 0 12px ${statusColor}44`}}>
+          {status==="perfect"?"★ ได้เต็ม!":status==="pass"?"✓ ผ่านแล้ว!":"✗ ยังไม่ผ่าน"}
         </div>
-
-        {/* รูปตัวละคร */}
-        {imageUrl && (
-          <div style={{
-            margin:"0 auto 16px",
-            width:"200px", height:"200px",
-            borderRadius:"16px",
-            overflow:"hidden",
-            border:`2px solid ${statusColor}44`,
-            boxShadow:`0 0 30px ${statusColor}33`,
-            background:"rgba(0,0,0,0.3)",
-          }}>
-            <img
-              src={imageUrl}
-              alt="character"
-              style={{width:"100%", height:"100%", objectFit:"cover", display:"block"}}
-              onError={e => { (e.target as any).style.display="none"; }}
-            />
+        {imageUrl&&(
+          <div style={{margin:"0 auto 16px",width:"200px",height:"200px",borderRadius:"16px",
+            overflow:"hidden",border:`2px solid ${statusColor}44`,boxShadow:`0 0 30px ${statusColor}33`,
+            background:"rgba(0,0,0,0.3)"}}>
+            <img src={imageUrl} alt="character" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+              onError={e=>{e.target.style.display="none";}}/>
           </div>
         )}
-
-        {/* ข้อความ */}
-        <p style={{
-          color:"#f5e6c8",
-          fontFamily:"'Sarabun',sans-serif",
-          fontSize:"18px",
-          lineHeight:1.6,
-          margin:"0 0 20px",
-          textShadow:`0 0 10px ${statusColor}44`,
-        }}>
-          {message}
-        </p>
-
-        {/* ปุ่มปิด */}
-        <button
-          onClick={handleClose}
-          style={{
-            width:"100%", padding:"12px",
-            background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
-            border:`1px solid ${statusColor}55`,
-            borderRadius:"10px",
-            color:statusColor,
-            fontFamily:"'Cinzel',serif", fontSize:"14px",
-            cursor:"pointer",
-          }}
-        >
-          ดูผลลัพธ์
-        </button>
+        <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",lineHeight:1.6,
+          margin:"0 0 20px",textShadow:`0 0 10px ${statusColor}44`}}>{message}</p>
+        <button onClick={handleClose} style={{width:"100%",padding:"12px",
+          background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
+          border:`1px solid ${statusColor}55`,borderRadius:"10px",color:statusColor,
+          fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>ดูผลลัพธ์</button>
       </div>
+    </div>
+  );
+}
+
+// ── Life Hearts (Challenge) ───────────────────────────────
+function LifeHearts({ total, remaining }) {
+  return (
+    <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
+      {[...Array(total)].map((_,i)=>(
+        <span key={i} style={{fontSize:"16px",
+          filter:i<remaining?"none":"grayscale(1) opacity(0.2)",
+          transition:"filter 0.3s, transform 0.3s",
+          display:"inline-block",
+          transform:i<remaining?"scale(1)":"scale(0.75)"}}>❤️</span>
+      ))}
     </div>
   );
 }
 
 // ── SET SELECT ────────────────────────────────────────────
 function SetSelectScreen({ onSelect, theme }) {
-  const [search, setSearch] = useState("");
-  const filtered = QUIZ_SETS.filter(s=>s.name.includes(search)||s.id.includes(search));
-  const tc = theme.themeColor;
+  const [search,setSearch]=useState("");
+  const filtered=QUIZ_SETS.filter(s=>s.name.includes(search)||s.id.includes(search));
+  const tc=theme.themeColor;
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
       <div style={{maxWidth:"560px",width:"100%",
@@ -320,9 +239,7 @@ function SetSelectScreen({ onSelect, theme }) {
           <div style={{fontSize:"44px",marginBottom:"8px"}}>{theme.logoEmoji}</div>
           <h1 style={{fontFamily:"'Cinzel Decorative',serif",color:tc,fontSize:theme.fontSize,
             margin:"0 0 4px",textShadow:`0 0 20px ${tc}44`}}>ลุยโจทย์</h1>
-          <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",margin:0}}>
-            Admin — เลือกชุดข้อสอบ
-          </p>
+          <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",margin:0}}>Admin — เลือกชุดข้อสอบ</p>
         </div>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 ค้นหา..."
           style={{width:"100%",boxSizing:"border-box",background:`${tc}11`,border:`1px solid ${tc}44`,
@@ -335,9 +252,7 @@ function SetSelectScreen({ onSelect, theme }) {
               padding:"13px 16px",cursor:"pointer",textAlign:"left",
               display:"flex",justifyContent:"space-between",alignItems:"center",transition:"all .2s"}}>
               <div>
-                <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",fontWeight:600}}>
-                  {set.name}
-                </div>
+                <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",fontWeight:600}}>{set.name}</div>
                 <div style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>
                   {set.id} · {set.total}ข้อ · {set.timeLimit/60}นาที · ผ่าน {set.passingScore} คะแนน
                 </div>
@@ -355,76 +270,72 @@ function SetSelectScreen({ onSelect, theme }) {
 }
 
 // ── LOGIN ─────────────────────────────────────────────────
-function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
-  const [sid, setSid] = useState("");
-  const [student, setStudent] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const tc = theme.themeColor;
-
-  const lookup = async () => {
+function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme, isChallenge, challengeLabel }) {
+  const [sid,setSid]=useState("");
+  const [student,setStudent]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const tc=theme.themeColor;
+  const lookup=async()=>{
     if(!sid.trim()) return;
     setLoading(true); setError(""); setStudent(null);
     try {
-      const data = await apiGet({ action:"getStudent", studentId:sid.trim() });
+      const data=await apiGet({ action:"getStudent", studentId:sid.trim() });
       if(data.error) setError(data.error);
       else setStudent(data.student);
     } catch { setError("เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่"); }
     setLoading(false);
   };
-
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
       <div style={{maxWidth:"460px",width:"100%",
         background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${tc}55`,borderRadius:"16px",padding:"32px 28px",
+        border:`2px solid ${isChallenge?"rgba(231,76,60,.4)":tc+"55"}`,borderRadius:"16px",padding:"32px 28px",
         boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
-        {!isDirectLink && (
+        {!isDirectLink&&(
           <button onClick={onBack} style={{background:"none",border:"none",color:"#6b5a3e",
             fontFamily:"'Cinzel',serif",fontSize:"12px",cursor:"pointer",marginBottom:"16px",padding:0}}>
             ← เปลี่ยนชุดข้อสอบ
           </button>
         )}
         <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{fontSize:"44px",marginBottom:"8px"}}>{theme.logoEmoji}</div>
-          <h1 style={{fontFamily:"'Cinzel Decorative',serif",color:tc,fontSize:theme.fontSize,
-            margin:"0 0 4px",textShadow:`0 0 20px ${tc}44`}}>ลุยโจทย์</h1>
+          <div style={{fontSize:"44px",marginBottom:"8px"}}>{isChallenge?"⚡":theme.logoEmoji}</div>
+          <h1 style={{fontFamily:"'Cinzel Decorative',serif",
+            color:isChallenge?"#e74c3c":tc,fontSize:theme.fontSize,
+            margin:"0 0 4px",textShadow:`0 0 20px ${isChallenge?"rgba(231,76,60,.4)":tc+"44"}`}}>
+            {isChallenge?"Challenge Mode":"ลุยโจทย์"}
+          </h1>
           <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",margin:0}}>
-            {set.id} · {set.total}ข้อ · ผ่าน {set.passingScore} คะแนน · {set.timeLimit/60}นาที
+            {isChallenge ? (challengeLabel||set.id) : `${set.id} · ${set.total}ข้อ · ผ่าน ${set.passingScore} คะแนน`}
           </p>
         </div>
         <label style={{display:"block",color:"#8b7355",fontSize:"11px",
           fontFamily:"'Cinzel',serif",letterSpacing:"1px",marginBottom:"6px"}}>รหัสนักเรียน</label>
         <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
-          <input value={sid}
-            onChange={e=>{setSid(e.target.value);setStudent(null);setError("");}}
-            onKeyDown={e=>e.key==="Enter"&&lookup()}
-            placeholder="เช่น 691009" maxLength={10}
+          <input value={sid} onChange={e=>{setSid(e.target.value);setStudent(null);setError("");}}
+            onKeyDown={e=>e.key==="Enter"&&lookup()} placeholder="เช่น 691009" maxLength={10}
             style={{flex:1,background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"8px",
               padding:"11px 14px",color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
               fontSize:"16px",outline:"none",boxSizing:"border-box"}}/>
           <button onClick={lookup} disabled={!sid.trim()||loading} style={{
-            padding:"0 18px",background:`${tc}22`,border:`1px solid ${tc}66`,
-            borderRadius:"8px",color:tc,fontFamily:"'Cinzel',serif",fontSize:"13px",
+            padding:"0 18px",background:`${tc}22`,border:`1px solid ${tc}66`,borderRadius:"8px",
+            color:tc,fontFamily:"'Cinzel',serif",fontSize:"13px",
             cursor:sid.trim()&&!loading?"pointer":"not-allowed",whiteSpace:"nowrap"}}>
             {loading?"...":"ค้นหา"}
           </button>
         </div>
-        {loading && <Spinner color={tc}/>}
-        {error && (
+        {loading&&<Spinner color={tc}/>}
+        {error&&(
           <div style={{background:"rgba(231,76,60,.1)",border:"1px solid rgba(231,76,60,.4)",
             borderRadius:"10px",padding:"14px",marginBottom:"16px",textAlign:"center",
             color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",fontSize:"14px"}}>{error}</div>
         )}
-        {student && !loading && (
+        {student&&!loading&&(
           <div style={{background:"rgba(39,174,96,.08)",border:"2px solid rgba(39,174,96,.4)",
             borderRadius:"12px",padding:"20px",marginBottom:"8px"}}>
-            <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",
-              textAlign:"center",marginBottom:"12px"}}>พบข้อมูลนักเรียน</p>
+            <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",textAlign:"center",marginBottom:"12px"}}>พบข้อมูลนักเรียน</p>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:"28px",fontWeight:900,fontFamily:"'Cinzel',serif",color:tc}}>
-                {student.nickname}
-              </div>
+              <div style={{fontSize:"28px",fontWeight:900,fontFamily:"'Cinzel',serif",color:tc}}>{student.nickname}</div>
               <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"16px",marginTop:"4px"}}>
                 {student.firstName} {student.lastName}
               </div>
@@ -449,30 +360,44 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme }) {
   );
 }
 
-// ── MC CHOICES ────────────────────────────────────────────
-function McChoices({ shuffled, selNow, onSelect, tc }) {
+// ── MC Choices ────────────────────────────────────────────
+function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrigIndex=null, showAnswer=false }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"9px"}}>
       {shuffled.map((choice,si)=>{
         const sel=selNow===si;
+        const isCorrectChoice=showAnswer&&choice.origIndex===correctOrigIndex;
+        const isWrongSelected=showAnswer&&sel&&!isCorrectChoice;
+        let bg=sel?`${tc}22`:"rgba(255,255,255,.02)";
+        let border=sel?`2px solid ${tc}`:`1px solid ${tc}22`;
+        let color=sel?"#f5e6c8":"#a89070";
+        if(showAnswer){
+          if(isCorrectChoice){ bg="rgba(39,174,96,.15)"; border="2px solid rgba(39,174,96,.6)"; color="#27ae60"; }
+          else if(isWrongSelected){ bg="rgba(231,76,60,.12)"; border="2px solid rgba(231,76,60,.5)"; color="#e74c3c"; }
+          else { bg="rgba(255,255,255,.01)"; border=`1px solid ${tc}11`; color="#5a4a30"; }
+        }
         return (
-          <button key={si} onClick={()=>onSelect(si)} style={{
-            background:sel?`${tc}22`:"rgba(255,255,255,.02)",
-            border:sel?`2px solid ${tc}`:`1px solid ${tc}22`,
-            borderRadius:"10px",padding:"13px 16px",
-            color:sel?"#f5e6c8":"#a89070",
-            fontFamily:"'Sarabun',sans-serif",fontSize:"16px",
-            cursor:"pointer",textAlign:"left",
-            display:"flex",alignItems:"center",gap:"12px",
-            transition:"all .15s",boxShadow:sel?`0 3px 14px ${tc}33`:"none"}}>
+          <button key={si} onClick={()=>!disabled&&onSelect(si)}
+            disabled={disabled}
+            style={{background:bg,border,borderRadius:"10px",padding:"13px 16px",
+              color,fontFamily:"'Sarabun',sans-serif",fontSize:"16px",
+              cursor:disabled?"default":"pointer",textAlign:"left",
+              display:"flex",alignItems:"center",gap:"12px",transition:"all .15s",
+              boxShadow:sel&&!showAnswer?`0 3px 14px ${tc}33`:"none"}}>
             <span style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,
-              background:sel?tc:`${tc}11`,border:sel?"none":`1px solid ${tc}33`,
-              display:"flex",alignItems:"center",justifyContent:"center",
+              background:showAnswer
+                ?(isCorrectChoice?"rgba(39,174,96,.3)":isWrongSelected?"rgba(231,76,60,.2)":"rgba(255,255,255,.03)")
+                :(sel?tc:`${tc}11`),
+              border:"none",display:"flex",alignItems:"center",justifyContent:"center",
               fontSize:"12px",fontWeight:700,fontFamily:"'Cinzel',serif",
-              color:sel?"#1a0e00":"#8b7355"}}>
+              color:showAnswer
+                ?(isCorrectChoice?"#27ae60":isWrongSelected?"#e74c3c":"#4a3a20")
+                :(sel?"#1a0e00":"#8b7355")}}>
               {["ก","ข","ค","ง"][si]}
             </span>
-            {choice.text}
+            <span style={{flex:1}}>{choice.text}</span>
+            {showAnswer&&isCorrectChoice&&<span style={{fontSize:"14px"}}>✓</span>}
+            {showAnswer&&isWrongSelected&&<span style={{fontSize:"14px"}}>✗</span>}
           </button>
         );
       })}
@@ -480,8 +405,8 @@ function McChoices({ shuffled, selNow, onSelect, tc }) {
   );
 }
 
-// ── TEXT INPUT ────────────────────────────────────────────
-function TextInput({ value, onChange, tc }) {
+// ── Text Input ────────────────────────────────────────────
+function TextInput({ value, onChange, tc, disabled=false }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
@@ -491,7 +416,9 @@ function TextInput({ value, onChange, tc }) {
         </span>
       </div>
       <div style={{position:"relative"}}>
-        <input type="text" inputMode="decimal" value={value} onChange={e=>onChange(e.target.value)}
+        <input type="text" inputMode="decimal" value={value}
+          onChange={e=>!disabled&&onChange(e.target.value)}
+          disabled={disabled}
           placeholder="พิมพ์คำตอบที่นี่ เช่น 7.5"
           style={{width:"100%",boxSizing:"border-box",
             background:value?`${tc}11`:"rgba(255,255,255,.03)",
@@ -499,100 +426,73 @@ function TextInput({ value, onChange, tc }) {
             borderRadius:"12px",padding:"18px 20px",color:"#f5e6c8",
             fontFamily:"'Sarabun',sans-serif",fontSize:"22px",outline:"none",
             textAlign:"center",letterSpacing:"2px",transition:"all .2s",
-            boxShadow:value?`0 0 20px ${tc}22`:"none"}}/>
-        {value && (
-          <button onClick={()=>onChange("")} style={{
-            position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",
-            background:"none",border:"none",color:"#6b5a3e",
+            boxShadow:value?`0 0 20px ${tc}22`:"none",opacity:disabled?.7:1}}/>
+        {value&&!disabled&&(
+          <button onClick={()=>onChange("")} style={{position:"absolute",right:"12px",top:"50%",
+            transform:"translateY(-50%)",background:"none",border:"none",color:"#6b5a3e",
             fontSize:"18px",cursor:"pointer",padding:"4px",lineHeight:1}}>×</button>
         )}
       </div>
-      <p style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",
-        textAlign:"center",margin:0}}>
-        ใช้ . หรือ , เป็นทศนิยมได้ · กด Enter เพื่อไปข้อถัดไป
-      </p>
+      {!disabled&&<p style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",textAlign:"center",margin:0}}>
+        ใช้ . หรือ , เป็นทศนิยมได้ · กด Enter เพื่อยืนยัน
+      </p>}
     </div>
   );
 }
 
-function PointsBadge({ points, tc }) {
-  if(!points || points === 1) return null;
-  return (
-    <span style={{
-      background:`linear-gradient(135deg,${tc}33,${tc}11)`,
-      border:`1px solid ${tc}66`,borderRadius:"20px",
-      padding:"3px 12px",fontSize:"12px",color:tc,
-      fontFamily:"'Cinzel',serif",fontWeight:700,
-      boxShadow:`0 0 8px ${tc}33`,
-    }}>
-      ★ {points} คะแนน
-    </span>
-  );
-}
-
-// ── QUIZ SCREEN ───────────────────────────────────────────
+// ── QUIZ SCREEN (normal) ──────────────────────────────────
 function QuizScreen({ set, student, questions, onFinish, theme }) {
-  const [current, setCurrent] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [timeLeft, setTimeLeft] = useState(set.timeLimit);
-  const timerRef = useRef(null);
-  const tc = theme.themeColor;
-  const maxScore = calcMaxScore(questions);
-
-  const [allShuffled] = useState(()=>
-    questions.map(q=>
-      q.questionType==="text" ? []
-      : shuffle(q.choices.map((c,i)=>({text:c,origIndex:i})))
-    )
+  const [current,setCurrent]=useState(0);
+  const [answers,setAnswers]=useState({});
+  const [timeLeft,setTimeLeft]=useState(set.timeLimit);
+  const timerRef=useRef(null);
+  const tc=theme.themeColor;
+  const maxScore=calcMaxScore(questions);
+  const [allShuffled]=useState(()=>
+    questions.map(q=>q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))))
   );
-
-  const finish = useCallback((timeUp=false)=>{
+  const finish=useCallback((timeUp=false)=>{
     clearInterval(timerRef.current);
-    const timeUsed = set.timeLimit - timeLeft;
-    const results = questions.map((q,qi)=>{
-      const shuffled = allShuffled[qi];
-      const ans = answers[qi] ?? null;
+    const timeUsed=set.timeLimit-timeLeft;
+    const results=questions.map((q,qi)=>{
+      const shuffled=allShuffled[qi], ans=answers[qi]??null;
       if(q.questionType==="text"){
-        const isCorrect = ans!==null && ans!=="" && checkTextAnswer(ans, q.correctTextAnswer);
-        return { question:q, selectedOrigIndex:null, userTextAnswer:ans, isCorrect, shuffledChoices:[] };
+        const isCorrect=ans!==null&&ans!==""&&checkTextAnswer(ans,q.correctTextAnswer);
+        return {question:q,selectedOrigIndex:null,userTextAnswer:ans,isCorrect,shuffledChoices:[]};
       } else {
-        const oi = ans!==null ? shuffled[ans].origIndex : null;
-        return { question:q, selectedOrigIndex:oi, isCorrect:oi===q.answer, shuffledChoices:shuffled };
+        const oi=ans!==null?shuffled[ans].origIndex:null;
+        return {question:q,selectedOrigIndex:oi,isCorrect:oi===q.answer,shuffledChoices:shuffled};
       }
     });
-    onFinish({ results, timeUsed, timeUp, student, set, maxScore });
-  },[answers, timeLeft]);
+    onFinish({results,timeUsed,timeUp,student,set,maxScore});
+  },[answers,timeLeft]);
 
   useEffect(()=>{
-    timerRef.current = setInterval(()=>{
-      setTimeLeft(t=>{ if(t<=1){ clearInterval(timerRef.current); finish(true); return 0; } return t-1; });
+    timerRef.current=setInterval(()=>{
+      setTimeLeft(t=>{ if(t<=1){clearInterval(timerRef.current);finish(true);return 0;} return t-1; });
     },1000);
-    return ()=>clearInterval(timerRef.current);
+    return()=>clearInterval(timerRef.current);
   },[finish]);
 
   useEffect(()=>{
-    if(questions[current]?.questionType==="text"){
-      setTimeout(() => (document.querySelector("input[inputmode='decimal']") as any)?.focus(), 100);
-    }
+    if(questions[current]?.questionType==="text")
+      setTimeout(()=>document.querySelector("input[inputmode='decimal']")?.focus(),100);
   },[current]);
 
-  const q = questions[current];
-  const shuffled = allShuffled[current];
-  const selNow = answers[current] ?? (q.questionType==="text" ? "" : null);
-  const answered = Object.keys(answers).filter(k=>answers[k]!==null&&answers[k]!=="").length;
+  const q=questions[current];
+  const shuffled=allShuffled[current];
+  const selNow=answers[current]??(q.questionType==="text"?"":null);
+  const answered=Object.keys(answers).filter(k=>answers[k]!==null&&answers[k]!=="").length;
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
       padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
-      {/* Header */}
       <div style={{background:"rgba(15,8,2,.92)",border:`1px solid ${tc}44`,
         borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
           <span style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px"}}>
             {student.nickname} · ข้อ <b style={{color:tc}}>{current+1}</b>/{questions.length}
-            <span style={{color:tc,marginLeft:"8px",fontSize:"11px"}}>
-              ({answered}/{questions.length} ข้อ)
-            </span>
+            <span style={{color:tc,marginLeft:"8px",fontSize:"11px"}}>({answered}/{questions.length} ข้อ)</span>
           </span>
           <span style={{fontFamily:"'Courier New',monospace",fontSize:"22px",fontWeight:700,
             color:timeLeft<60?"#e74c3c":timeLeft<180?"#e67e22":tc,
@@ -603,19 +503,17 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
         <TimerBar timeLeft={timeLeft} totalTime={set.timeLimit} color={tc}/>
         <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
           {questions.map((qs,i)=>{
-            const isAnswered = answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
-            const isText = qs.questionType==="text";
-            const pts = qs.points ?? 1;
+            const isAnswered=answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
+            const pts=qs.points??1;
             return (
-              <div key={i} onClick={()=>setCurrent(i)} title={`ข้อ ${i+1} (${pts} คะแนน)`} style={{
+              <div key={i} onClick={()=>setCurrent(i)} style={{
                 minWidth:"24px",height:"24px",borderRadius:"5px",cursor:"pointer",padding:"0 3px",
                 background:i===current?tc:isAnswered?tc+"55":"rgba(255,255,255,.06)",
                 border:i===current?`2px solid ${tc}`:`1px solid ${tc}33`,
                 display:"flex",alignItems:"center",justifyContent:"center",
                 fontSize:"9px",fontWeight:700,color:i===current?"#1a0e00":"#8b7355",
-                transition:"all .15s",gap:"1px",
-              }}>
-                {isText?"✏":i+1}
+                transition:"all .15s",gap:"1px"}}>
+                {qs.questionType==="text"?"✏":i+1}
                 {pts>1&&<span style={{fontSize:"8px",color:i===current?"#1a0e00":tc}}>×{pts}</span>}
               </div>
             );
@@ -623,61 +521,50 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
         </div>
       </div>
 
-      {/* Question Card */}
       <div style={{flex:1,background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
         border:`2px solid ${tc}55`,borderRadius:"16px",padding:"20px",marginBottom:"12px",
         boxShadow:"0 10px 40px rgba(0,0,0,.6)"}}>
         <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
           <PointsBadge points={q.points} tc={tc}/>
-          {q.isRare && (
-            <span style={{background:"linear-gradient(135deg,#1a0a2e,#4a0080)",
-              border:"1px solid #9b59b6",borderRadius:"20px",padding:"3px 12px",
-              fontSize:"11px",color:"#d7bde2",fontFamily:"'Cinzel',serif",
-              boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
+          {q.isRare&&(
+            <span style={{background:"linear-gradient(135deg,#1a0a2e,#4a0080)",border:"1px solid #9b59b6",
+              borderRadius:"20px",padding:"3px 12px",fontSize:"11px",color:"#d7bde2",
+              fontFamily:"'Cinzel',serif",boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
           )}
         </div>
         <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
-          padding:"10px",marginBottom:"16px",minHeight:"220px",
-          display:"flex",alignItems:"center",justifyContent:"center"}}>
-          {q.imageUrl ? (
-            <img src={q.imageUrl} alt="โจทย์" style={{
-              width:"100%",maxHeight:"400px",objectFit:"contain",borderRadius:"8px",display:"block"}}/>
-          ) : q.setText ? (
-            <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
-              fontSize:"18px",textAlign:"center",margin:0,lineHeight:1.6}}>{q.setText}</p>
-          ) : (
-            <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"13px",
-              textAlign:"center",margin:0}}>ข้อที่ {current+1}</p>
+          padding:"10px",marginBottom:"16px",minHeight:"220px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {q.imageUrl?(
+            <img src={q.imageUrl} alt="โจทย์" style={{width:"100%",maxHeight:"400px",objectFit:"contain",borderRadius:"8px"}}/>
+          ):q.setText?(
+            <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",textAlign:"center",margin:0,lineHeight:1.6}}>{q.setText}</p>
+          ):(
+            <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"13px",textAlign:"center",margin:0}}>ข้อที่ {current+1}</p>
           )}
         </div>
-        {q.questionType==="text" ? (
+        {q.questionType==="text"?(
           <div onKeyDown={e=>e.key==="Enter"&&current<questions.length-1&&setCurrent(c=>c+1)}>
             <TextInput value={selNow||""} onChange={val=>setAnswers(a=>({...a,[current]:val}))} tc={tc}/>
           </div>
-        ) : (
-          <McChoices shuffled={shuffled} selNow={selNow}
-            onSelect={si=>setAnswers(a=>({...a,[current]:si}))} tc={tc}/>
+        ):(
+          <McChoices shuffled={shuffled} selNow={selNow} onSelect={si=>setAnswers(a=>({...a,[current]:si}))} tc={tc}/>
         )}
       </div>
 
-      {/* Navigation */}
       <div style={{display:"flex",gap:"8px"}}>
         <button onClick={()=>setCurrent(c=>c-1)} disabled={current===0} style={{
-          flex:1,padding:"12px",background:`${tc}11`,border:`1px solid ${tc}44`,
-          borderRadius:"10px",color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",
-          cursor:current===0?"not-allowed":"pointer",opacity:current===0?.35:1}}>
+          flex:1,padding:"12px",background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"10px",
+          color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:current===0?"not-allowed":"pointer",
+          opacity:current===0?.35:1}}>
           ← ก่อนหน้า
         </button>
-        {current<questions.length-1 ? (
-          <button onClick={()=>setCurrent(c=>c+1)} style={{
-            flex:2,padding:"12px",background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
+        {current<questions.length-1?(
+          <button onClick={()=>setCurrent(c=>c+1)} style={{flex:2,padding:"12px",
+            background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
             border:"none",borderRadius:"10px",color:"#1a0e00",
-            fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer"}}>
-            ถัดไป →
-          </button>
-        ) : (
-          <button onClick={()=>finish(false)} style={{
-            flex:2,padding:"12px",border:"none",borderRadius:"10px",
+            fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer"}}>ถัดไป →</button>
+        ):(
+          <button onClick={()=>finish(false)} style={{flex:2,padding:"12px",border:"none",borderRadius:"10px",
             background:answered===questions.length
               ?"linear-gradient(135deg,#1a4a1a,#27ae60,#1a4a1a)"
               :`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
@@ -691,125 +578,89 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   );
 }
 
-// ── RESULT SCREEN ─────────────────────────────────────────
+// ── RESULT SCREEN (normal) ────────────────────────────────
 function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
-  const { results, timeUsed, timeUp, student, set, maxScore } = data;
-  const totalScore = calcTotalScore(results);
-  const passed = totalScore >= set.passingScore;
-  const isPerfect = totalScore === maxScore && maxScore > 0;
-  const rareOK = results.filter(r=>r.question.isRare && r.isCorrect);
-  const correctCount = results.filter(r=>r.isCorrect).length;
-  const tc = theme.themeColor;
-
-  const [showDetail, setShowDetail] = useState(false);
-  const [saving, setSaving] = useState(true);
-  const [saveErr, setSaveErr] = useState(false);
-
-  // ── Character state ──────────────────────────────
-  const [charData, setCharData] = useState(null);
-  const [showChar, setShowChar] = useState(false);
-  const charStatus = isPerfect ? "perfect" : passed ? "pass" : "fail";
+  const {results,timeUsed,timeUp,student,set,maxScore}=data;
+  const totalScore=calcTotalScore(results);
+  const passed=totalScore>=set.passingScore;
+  const isPerfect=totalScore===maxScore&&maxScore>0;
+  const rareOK=results.filter(r=>r.question.isRare&&r.isCorrect);
+  const correctCount=results.filter(r=>r.isCorrect).length;
+  const tc=theme.themeColor;
+  const [showDetail,setShowDetail]=useState(false);
+  const [saving,setSaving]=useState(true);
+  const [saveErr,setSaveErr]=useState(false);
+  const [charData,setCharData]=useState(null);
+  const [showChar,setShowChar]=useState(false);
+  const charStatus=isPerfect?"perfect":passed?"pass":"fail";
 
   useEffect(()=>{
     (async()=>{
       try {
-        // บันทึกผล
         await apiPost({
-          action:"saveResult", studentId:student.id,
+          action:"saveResult",studentId:student.id,
           studentName:`${student.firstName} ${student.lastName}`,
-          studentNickname:student.nickname, setName:set.id,
-          score:`${totalScore}/${maxScore}`,
-          correctCount:`${correctCount}/${results.length}`,
-          passed:passed?"ผ่าน":"ไม่ผ่าน", timeUsed,
+          studentNickname:student.nickname,setName:set.id,
+          score:`${totalScore}/${maxScore}`,correctCount:`${correctCount}/${results.length}`,
+          passed:passed?"ผ่าน":"ไม่ผ่าน",timeUsed,
           correctIds:results.filter(r=>r.isCorrect).map(r=>r.question.id).join(","),
           wrongIds:results.filter(r=>!r.isCorrect).map(r=>r.question.id).join(","),
         });
         for(const r of rareOK){
           if(r.question.seriesId)
-            await apiPost({ action:"saveRareProgress", studentId:student.id,
-              seriesId:r.question.seriesId, questionId:r.question.id });
+            await apiPost({action:"saveRareProgress",studentId:student.id,seriesId:r.question.seriesId,questionId:r.question.id});
         }
       } catch { setSaveErr(true); }
       setSaving(false);
-
-      // โหลด character data
       try {
-        const charRes = await apiGet({ action:"getCharacter", setId:set.id });
-        if(charRes.character) {
-          setCharData(charRes.character);
-          setShowChar(true); // เด้งขึ้นมาหลังโหลดเสร็จ
-        }
-      } catch {
-        // ถ้าไม่มี character config ก็ไม่แสดง
-      }
+        const cr=await apiGet({action:"getCharacter",setId:set.id});
+        if(cr.character){setCharData(cr.character);setShowChar(true);}
+      } catch {}
     })();
   },[]);
 
-  const scorePct = maxScore > 0 ? (totalScore/maxScore)*100 : 0;
-  const passingPct = maxScore > 0 ? (set.passingScore/maxScore)*100 : 0;
+  const scorePct=maxScore>0?(totalScore/maxScore)*100:0;
+  const passingPct=maxScore>0?(set.passingScore/maxScore)*100:0;
 
   return (
     <>
-      {/* Character Popup */}
-      {showChar && charData && (
-        <CharacterPopup
-          charData={charData}
-          status={charStatus}
-          onClose={()=>setShowChar(false)}
-          tc={tc}
-        />
+      {showChar&&charData&&(
+        <CharacterPopup charData={charData} status={charStatus} onClose={()=>setShowChar(false)} tc={tc}/>
       )}
-
-      <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",
-        display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <div style={{maxWidth:"560px",width:"100%",marginTop:"20px",marginBottom:"40px",
           background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
           border:`2px solid ${passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
-          borderRadius:"16px",padding:"32px 28px",
-          boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
-
+          borderRadius:"16px",padding:"32px 28px",boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
           <div style={{textAlign:"center",marginBottom:"24px"}}>
-            <div style={{fontSize:"56px",marginBottom:"6px"}}>
-              {isPerfect ? "🌟" : passed ? "🎉" : "😤"}
-            </div>
+            <div style={{fontSize:"56px",marginBottom:"6px"}}>{isPerfect?"🌟":passed?"🎉":"😤"}</div>
             <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"26px",fontWeight:700,
               color:isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c",
               textShadow:`0 0 20px ${isPerfect?"rgba(241,196,15,.5)":passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
-              {isPerfect ? "เต็มทุกข้อ!" : passed ? "ผ่านแล้ว!" : "ยังไม่ผ่าน"}
+              {isPerfect?"เต็มทุกข้อ!":passed?"ผ่านแล้ว!":"ยังไม่ผ่าน"}
             </div>
             {timeUp&&<div style={{color:"#e67e22",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>⏱ หมดเวลา</div>}
-
             <div style={{fontSize:"60px",fontWeight:900,fontFamily:"'Cinzel',serif",
               color:isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c",lineHeight:1,marginTop:"12px"}}>
-              {totalScore}
-              <span style={{fontSize:"28px",color:"#6b5a3e"}}>/{maxScore}</span>
+              {totalScore}<span style={{fontSize:"28px",color:"#6b5a3e"}}>/{maxScore}</span>
             </div>
-            <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>
-              คะแนน · ผ่านที่ {set.passingScore} คะแนน
-            </div>
-
-            {/* Score bar */}
+            <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>คะแนน · ผ่านที่ {set.passingScore} คะแนน</div>
             <div style={{marginTop:"12px",position:"relative"}}>
-              <div style={{width:"100%",height:"10px",background:"rgba(255,255,255,.08)",
-                borderRadius:"5px",overflow:"visible",position:"relative"}}>
+              <div style={{width:"100%",height:"10px",background:"rgba(255,255,255,.08)",borderRadius:"5px",overflow:"visible",position:"relative"}}>
                 <div style={{height:"100%",width:scorePct+"%",
                   background:`linear-gradient(90deg,${isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c"},${isPerfect?"#f39c12":passed?"#2ecc71":"#e74c3c"})`,
                   borderRadius:"5px",transition:"width .8s ease",
                   boxShadow:`0 0 8px ${isPerfect?"rgba(241,196,15,.6)":passed?"rgba(39,174,96,.6)":"rgba(231,76,60,.5)"}`}}/>
-                <div style={{position:"absolute",top:"-4px",left:passingPct+"%",
-                  width:"2px",height:"18px",background:"#f5e6c8",borderRadius:"1px",
-                  transform:"translateX(-50%)"}}/>
+                <div style={{position:"absolute",top:"-4px",left:passingPct+"%",width:"2px",height:"18px",
+                  background:"#f5e6c8",borderRadius:"1px",transform:"translateX(-50%)"}}/>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",marginTop:"4px"}}>
                 <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>0</span>
                 <span style={{color:"#f5e6c8",fontSize:"10px",fontFamily:"'Cinzel',serif",
-                  position:"absolute",left:passingPct+"%",transform:"translateX(-50%)",marginTop:"0"}}>
-                  เกณฑ์ {set.passingScore}
-                </span>
+                  position:"absolute",left:passingPct+"%",transform:"translateX(-50%)"}}>เกณฑ์ {set.passingScore}</span>
                 <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>{maxScore}</span>
               </div>
             </div>
-
             <div style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginTop:"12px"}}>
               {student.nickname} · {set.id} · ใช้เวลา {formatTime(timeUsed)}
             </div>
@@ -819,17 +670,11 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
             </div>
           </div>
 
-          {/* Stats */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
-            {[
-              ["✓ ข้อถูก",`${correctCount}/${results.length}`,"#27ae60"],
-              ["★ คะแนน",`${totalScore}/${maxScore}`,tc],
-              ["⏱ เวลา",formatTime(timeUsed),"#a89070"],
-              ["✦ หายาก",`${rareOK.length} ข้อ`,"#9b59b6"],
-            ].map(([k,v,c])=>(
-              <div key={k} style={{background:"rgba(255,255,255,.02)",
-                border:"1px solid rgba(212,175,55,.12)",borderRadius:"10px",
-                padding:"12px",textAlign:"center"}}>
+            {[["✓ ข้อถูก",`${correctCount}/${results.length}`,"#27ae60"],["★ คะแนน",`${totalScore}/${maxScore}`,tc],
+              ["⏱ เวลา",formatTime(timeUsed),"#a89070"],["✦ หายาก",`${rareOK.length} ข้อ`,"#9b59b6"]].map(([k,v,c])=>(
+              <div key={k} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(212,175,55,.12)",
+                borderRadius:"10px",padding:"12px",textAlign:"center"}}>
                 <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
                 <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
               </div>
@@ -838,21 +683,15 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
 
           {rareOK.length>0&&(
             <div style={{background:"rgba(74,0,128,.2)",border:"1px solid rgba(155,89,182,.5)",
-              borderRadius:"10px",padding:"12px 16px",marginBottom:"16px",
-              display:"flex",alignItems:"center",gap:"10px"}}>
+              borderRadius:"10px",padding:"12px 16px",marginBottom:"16px",display:"flex",alignItems:"center",gap:"10px"}}>
               <span style={{fontSize:"18px"}}>✦</span>
               <div>
-                <div style={{color:"#d7bde2",fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:700}}>
-                  โจทย์หายากผ่าน {rareOK.length} ข้อ!
-                </div>
-                <div style={{color:"#7d3c98",fontSize:"11px",fontFamily:"'Sarabun',sans-serif"}}>
-                  ความสำเร็จถูกบันทึกแล้ว
-                </div>
+                <div style={{color:"#d7bde2",fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:700}}>โจทย์หายากผ่าน {rareOK.length} ข้อ!</div>
+                <div style={{color:"#7d3c98",fontSize:"11px",fontFamily:"'Sarabun',sans-serif"}}>ความสำเร็จถูกบันทึกแล้ว</div>
               </div>
             </div>
           )}
 
-          {/* ปุ่มดูเฉลย */}
           <div style={{marginBottom:"16px"}}>
             <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
               width:"100%",padding:"13px",
@@ -866,63 +705,52 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
           {showDetail&&(
             <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"20px"}}>
               {results.map((r,i)=>{
-                const pts = r.question.points ?? 1;
-                let correctText, selectedText;
+                const pts=r.question.points??1;
+                let correctText,selectedText;
                 if(r.question.questionType==="text"){
-                  correctText = String(r.question.correctTextAnswer ?? "-");
-                  selectedText = r.userTextAnswer || "ไม่ได้ตอบ";
+                  correctText=String(r.question.correctTextAnswer??"-");
+                  selectedText=r.userTextAnswer||"ไม่ได้ตอบ";
                 } else {
-                  correctText = r.shuffledChoices.find(c=>c.origIndex===r.question.answer)?.text ?? "-";
-                  selectedText = r.selectedOrigIndex!==null
-                    ? r.shuffledChoices.find(c=>c.origIndex===r.selectedOrigIndex)?.text ?? "-"
-                    : "ไม่ได้ตอบ";
+                  correctText=r.shuffledChoices.find(c=>c.origIndex===r.question.answer)?.text??"-";
+                  selectedText=r.selectedOrigIndex!==null
+                    ?r.shuffledChoices.find(c=>c.origIndex===r.selectedOrigIndex)?.text??"-"
+                    :"ไม่ได้ตอบ";
                 }
                 return (
-                  <div key={i} style={{
-                    background:r.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
+                  <div key={i} style={{background:r.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
                     border:`1px solid ${r.isCorrect?"rgba(39,174,96,.3)":"rgba(231,76,60,.3)"}`,
                     borderRadius:"10px",padding:"14px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
-                      <span style={{fontFamily:"'Cinzel',serif",fontSize:"12px",
-                        color:r.isCorrect?"#27ae60":"#e74c3c"}}>
+                      <span style={{fontFamily:"'Cinzel',serif",fontSize:"12px",color:r.isCorrect?"#27ae60":"#e74c3c"}}>
                         {r.isCorrect?"✓":"✗"} ข้อ {i+1}
                       </span>
-                      <span style={{
-                        background:r.isCorrect?"rgba(39,174,96,.2)":"rgba(231,76,60,.15)",
+                      <span style={{background:r.isCorrect?"rgba(39,174,96,.2)":"rgba(231,76,60,.15)",
                         border:`1px solid ${r.isCorrect?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`,
                         borderRadius:"12px",padding:"1px 8px",fontSize:"11px",
                         color:r.isCorrect?"#27ae60":"#e74c3c",fontFamily:"'Cinzel',serif",fontWeight:700}}>
                         {r.isCorrect?"+":"-"}{pts} คะแนน
                       </span>
                       {r.question.questionType==="text"&&(
-                        <span style={{background:`${tc}22`,border:`1px solid ${tc}44`,
-                          borderRadius:"10px",padding:"1px 8px",fontSize:"10px",color:tc}}>✏ อัตนัย</span>
+                        <span style={{background:`${tc}22`,border:`1px solid ${tc}44`,borderRadius:"10px",
+                          padding:"1px 8px",fontSize:"10px",color:tc}}>✏ อัตนัย</span>
                       )}
-                      {r.question.isRare&&(
-                        <span style={{color:"#9b59b6",fontSize:"11px"}}>✦ หายาก</span>
-                      )}
+                      {r.question.isRare&&<span style={{color:"#9b59b6",fontSize:"11px"}}>✦ หายาก</span>}
                     </div>
-                    <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",
-                      color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
+                    <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
                       {r.isCorrect
-                        ? <span>✓ ตอบถูก: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
-                        : <span>
-                            คุณตอบ: <span style={{color:"#e74c3c"}}>{selectedText}</span>
-                            {" · "}เฉลย: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span>
-                          </span>
+                        ?<span>✓ ตอบถูก: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
+                        :<span>คุณตอบ: <span style={{color:"#e74c3c"}}>{selectedText}</span>{" · "}เฉลย: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
                       }
                     </div>
                     <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
                       {r.question.linkText&&(
-                        <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{
-                          fontSize:"12px",color:tc,textDecoration:"none",
-                          padding:"4px 12px",border:`1px solid ${tc}55`,
+                        <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
+                          textDecoration:"none",padding:"4px 12px",border:`1px solid ${tc}55`,
                           borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
                       )}
                       {r.question.linkVideo&&(
-                        <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{
-                          fontSize:"12px",color:"#e74c3c",textDecoration:"none",
-                          padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
+                        <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
+                          textDecoration:"none",padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
                           borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
                       )}
                     </div>
@@ -932,52 +760,26 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
             </div>
           )}
 
-          {/* ── ปุ่มหลัก: หน้าหลัก / ทำใหม่ ── */}
           <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
             {!isDirectLink&&(
-              <button type="button" onClick={onHome} style={{
-                flex:1,padding:"13px",background:"rgba(212,175,55,.06)",
-                border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
-                fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
-                หน้าหลัก
-              </button>
+              <button type="button" onClick={onHome} style={{flex:1,padding:"13px",
+                background:"rgba(212,175,55,.06)",border:`1px solid ${tc}44`,borderRadius:"10px",
+                color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>หน้าหลัก</button>
             )}
-            <button type="button" onClick={onRetry} style={{
-              flex:2,padding:"13px",
+            <button type="button" onClick={onRetry} style={{flex:2,padding:"13px",
               background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
               border:"none",borderRadius:"10px",color:"#1a0e00",
               fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer",
-              boxShadow:`0 4px 20px ${tc}33`}}>
-              ทำใหม่
-            </button>
+              boxShadow:`0 4px 20px ${tc}33`}}>ทำใหม่</button>
           </div>
 
-          {/* ── ปุ่ม Looker Studio (ด้านล่างสุด แยกต่างหาก) ── */}
-          <a
-            href={LOOKER_STUDIO_URL}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display:"flex",
-              alignItems:"center",
-              justifyContent:"center",
-              gap:"10px",
-              width:"100%",
-              padding:"13px",
-              boxSizing:"border-box",
-              background:"linear-gradient(135deg,rgba(66,133,244,.15),rgba(66,133,244,.05))",
-              border:"1px solid rgba(66,133,244,.4)",
-              borderRadius:"10px",
-              color:"#7ab3f5",
-              fontFamily:"'Cinzel',serif",
-              fontSize:"14px",
-              fontWeight:600,
-              textDecoration:"none",
-              transition:"all .2s",
-              boxShadow:"0 2px 12px rgba(66,133,244,.15)",
-            }}
-          >
-            {/* Looker Studio icon */}
+          <a href={LOOKER_STUDIO_URL} target="_blank" rel="noreferrer" style={{
+            display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",
+            width:"100%",padding:"13px",boxSizing:"border-box",
+            background:"linear-gradient(135deg,rgba(66,133,244,.15),rgba(66,133,244,.05))",
+            border:"1px solid rgba(66,133,244,.4)",borderRadius:"10px",color:"#7ab3f5",
+            fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,textDecoration:"none",
+            transition:"all .2s",boxShadow:"0 2px 12px rgba(66,133,244,.15)"}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="#7ab3f5" strokeWidth="1.5"/>
               <path d="M8 12 Q12 6 16 12 Q12 18 8 12Z" fill="#7ab3f5" opacity="0.7"/>
@@ -985,67 +787,526 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
             </svg>
             ดูรายงานผลใน Looker Studio
           </a>
-
         </div>
       </div>
     </>
   );
 }
 
-// ── MAIN APP ──────────────────────────────────────────────
-export default function App() {
-  const [screen, setScreen] = useState("init");
-  const [selectedSet, setSet] = useState(null);
-  const [student, setStudent] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [resultData, setResult] = useState(null);
-  const [loadError, setLoadError] = useState("");
-  const [theme, setTheme] = useState(DEFAULT_THEME);
-  const [isDirectLink] = useState(()=>!!getSetFromUrl());
+// ── CHALLENGE SCREEN ──────────────────────────────────────
+function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
+  const { maxQuestions, lives: maxLives, challengeName } = challengeConfig;
+  const tc = theme.themeColor;
+  const ACCENT = "#e74c3c";
+
+  const [current, setCurrent] = useState(null);
+  const [shuffledChoices, setShuffledChoices] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [textVal, setTextVal] = useState("");
+  const [phase, setPhase] = useState("question"); // question | reveal_correct | reveal_wrong
+  const [lives, setLives] = useState(maxLives);
+  const [streak, setStreak] = useState(0);
+  const [score, setScore] = useState(0);
+  const [questionNum, setQuestionNum] = useState(0);
+  const [history, setHistory] = useState([]);
+  const usedIds = useRef(new Set());
+  const [shakeHeart, setShakeHeart] = useState(false);
+  const scoreRef = useRef(0);
+  const livesRef = useRef(maxLives);
+  const historyRef = useRef([]);
+
+  useEffect(()=>{ loadNext(0, maxLives, []); },[]);
+
+  function loadNext(currentNum, currentLives, currentHistory) {
+    const q = pickChallengeQuestion(pool, usedIds.current);
+    if(!q || (maxQuestions>0 && currentNum>=maxQuestions)) {
+      onFinish({ history:currentHistory, score:scoreRef.current, lives:currentLives, livesMax:maxLives, reason:"complete", student, challengeConfig });
+      return;
+    }
+    usedIds.current.add(q.id);
+    setCurrent(q);
+    setShuffledChoices(q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))));
+    setSelected(null); setTextVal(""); setPhase("question");
+  }
+
+  function submitAnswer() {
+    if(!current) return;
+    let isCorrect=false, selectedOrigIndex=null;
+    if(current.questionType==="text"){
+      if(textVal.trim()==="") return;
+      isCorrect=checkTextAnswer(textVal, current.correctTextAnswer);
+    } else {
+      if(selected===null) return;
+      selectedOrigIndex=shuffledChoices[selected].origIndex;
+      isCorrect=selectedOrigIndex===current.answer;
+    }
+    const pts=current.points??1;
+    const newEntry={ question:current, isCorrect, selectedOrigIndex, userTextAnswer:textVal,
+      shuffledChoices:[...shuffledChoices], questionNumber:questionNum+1 };
+    const newHistory=[...historyRef.current, newEntry];
+    historyRef.current=newHistory;
+    setHistory(newHistory);
+    setQuestionNum(n=>n+1);
+
+    if(isCorrect){
+      scoreRef.current+=pts;
+      setScore(s=>s+pts);
+      setStreak(s=>s+1);
+      setPhase("reveal_correct");
+      const nextNum=questionNum+1;
+      setTimeout(()=>{
+        if(maxQuestions>0&&nextNum>=maxQuestions){
+          onFinish({history:newHistory,score:scoreRef.current,lives:livesRef.current,livesMax:maxLives,reason:"complete",student,challengeConfig});
+        } else { loadNext(nextNum, livesRef.current, newHistory); }
+      },1200);
+    } else {
+      const newLives=livesRef.current-1;
+      livesRef.current=newLives;
+      setLives(newLives);
+      setStreak(0);
+      setShakeHeart(true);
+      setTimeout(()=>setShakeHeart(false),600);
+      setPhase("reveal_wrong");
+    }
+  }
+
+  function handleNextAfterWrong() {
+    if(livesRef.current<=0){
+      onFinish({history:historyRef.current,score:scoreRef.current,lives:0,livesMax:maxLives,reason:"gameover",student,challengeConfig});
+    } else {
+      loadNext(questionNum, livesRef.current, historyRef.current);
+    }
+  }
+
+  if(!current) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><Spinner color={tc}/></div>
+  );
+
+  const isReveal=phase==="reveal_correct"||phase==="reveal_wrong";
+  const isCorrectReveal=phase==="reveal_correct";
+  const progressPct=maxQuestions>0?(questionNum/maxQuestions)*100:0;
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
+      padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
+
+      {/* Header */}
+      <div style={{background:"rgba(15,8,2,.94)",
+        border:`1px solid ${ACCENT}44`,borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+          <div>
+            <div style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
+              ⚡ {challengeName||"Challenge Mode"}
+            </div>
+            <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginTop:"1px"}}>
+              {student.nickname} · ข้อที่ {questionNum+1}{maxQuestions>0?` / ${maxQuestions}`:""}
+            </div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:tc,fontFamily:"'Cinzel',serif",fontSize:"22px",fontWeight:900}}>
+              {score}<span style={{fontSize:"12px",color:"#6b5a3e",marginLeft:"4px"}}>คะแนน</span>
+            </div>
+            {streak>=3&&(
+              <div style={{fontSize:"11px",color:"#f39c12",fontFamily:"'Cinzel',serif"}}>🔥 ×{streak} ติดต่อกัน</div>
+            )}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:"10px",
+          animation:shakeHeart?"heartshake 0.5s ease":"none"}}>
+          <LifeHearts total={maxLives} remaining={lives}/>
+          {maxQuestions>0&&(
+            <div style={{display:"flex",alignItems:"center",gap:"6px",flex:1}}>
+              <div style={{flex:1,height:"4px",background:"rgba(255,255,255,.08)",borderRadius:"2px",overflow:"hidden"}}>
+                <div style={{height:"100%",width:progressPct+"%",background:tc,borderRadius:"2px",transition:"width 0.5s"}}/>
+              </div>
+              <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif",whiteSpace:"nowrap"}}>
+                {questionNum}/{maxQuestions}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Question card */}
+      <div style={{flex:1,
+        background:isReveal
+          ?(isCorrectReveal?"linear-gradient(160deg,rgba(10,30,10,.97),rgba(15,40,15,.97))"
+            :"linear-gradient(160deg,rgba(35,10,10,.97),rgba(45,15,15,.97))")
+          :"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
+        border:`2px solid ${isReveal?(isCorrectReveal?"rgba(39,174,96,.6)":"rgba(231,76,60,.6)"):tc+"55"}`,
+        borderRadius:"16px",padding:"20px",marginBottom:"12px",
+        boxShadow:isReveal?`0 10px 40px ${isCorrectReveal?"rgba(39,174,96,.2)":"rgba(231,76,60,.2)"}`:"0 10px 40px rgba(0,0,0,.6)",
+        transition:"all 0.3s ease"}}>
+
+        {isReveal&&(
+          <div style={{textAlign:"center",padding:"10px",marginBottom:"14px",borderRadius:"10px",
+            background:isCorrectReveal?"rgba(39,174,96,.15)":"rgba(231,76,60,.15)",
+            border:`1px solid ${isCorrectReveal?"rgba(39,174,96,.4)":"rgba(231,76,60,.4)"}`}}>
+            <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"18px",
+              color:isCorrectReveal?"#27ae60":"#e74c3c"}}>
+              {isCorrectReveal?"✓ ถูกต้อง!":"✗ ผิด!"}
+            </span>
+            {isCorrectReveal&&streak>0&&streak>=3&&(
+              <span style={{color:"#f39c12",fontSize:"13px",marginLeft:"10px",fontFamily:"'Cinzel',serif"}}>🔥 ×{streak}</span>
+            )}
+            {!isCorrectReveal&&(
+              <div style={{color:"#c0a878",fontSize:"13px",marginTop:"4px",fontFamily:"'Sarabun',sans-serif"}}>
+                เหลือ {lives} ชีวิต
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
+          <PointsBadge points={current.points} tc={tc}/>
+          {current.isRare&&(
+            <span style={{background:"linear-gradient(135deg,#1a0a2e,#4a0080)",border:"1px solid #9b59b6",
+              borderRadius:"20px",padding:"3px 12px",fontSize:"11px",color:"#d7bde2",
+              fontFamily:"'Cinzel',serif",boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
+          )}
+          <span style={{background:`${tc}11`,border:`1px solid ${tc}33`,borderRadius:"20px",
+            padding:"3px 10px",fontSize:"10px",color:"#8b7355",fontFamily:"'Cinzel',serif"}}>
+            {current.setName}
+          </span>
+        </div>
+
+        <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
+          padding:"10px",marginBottom:"16px",minHeight:"180px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {current.imageUrl?(
+            <img src={current.imageUrl} alt="โจทย์" style={{width:"100%",maxHeight:"360px",objectFit:"contain",borderRadius:"8px"}}/>
+          ):current.setText?(
+            <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",textAlign:"center",margin:0,lineHeight:1.6}}>
+              {current.setText}
+            </p>
+          ):(
+            <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"13px",textAlign:"center",margin:0}}>ข้อที่ {questionNum+1}</p>
+          )}
+        </div>
+
+        {current.questionType==="text"?(
+          <div onKeyDown={e=>{ if(e.key==="Enter"&&!isReveal) submitAnswer(); }}>
+            <TextInput value={textVal} onChange={setTextVal} tc={tc} disabled={isReveal}/>
+            {isReveal&&(
+              <div style={{marginTop:"12px",padding:"12px",
+                background:"rgba(39,174,96,.1)",border:"1px solid rgba(39,174,96,.3)",
+                borderRadius:"10px",textAlign:"center"}}>
+                <span style={{color:"#8b7355",fontSize:"12px",fontFamily:"'Cinzel',serif"}}>เฉลย: </span>
+                <span style={{color:"#27ae60",fontWeight:700,fontSize:"18px",fontFamily:"'Sarabun',sans-serif"}}>
+                  {current.correctTextAnswer}
+                </span>
+              </div>
+            )}
+          </div>
+        ):(
+          <McChoices shuffled={shuffledChoices} selNow={selected} onSelect={si=>!isReveal&&setSelected(si)}
+            tc={tc} disabled={isReveal}
+            correctOrigIndex={isReveal?current.answer:null} showAnswer={isReveal}/>
+        )}
+
+        {isReveal&&!isCorrectReveal&&(current.linkText||current.linkVideo)&&(
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"12px"}}>
+            {current.linkText&&(
+              <a href={current.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
+                textDecoration:"none",padding:"5px 14px",border:`1px solid ${tc}55`,
+                borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
+            )}
+            {current.linkVideo&&(
+              <a href={current.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
+                textDecoration:"none",padding:"5px 14px",border:"1px solid rgba(231,76,60,.4)",
+                borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Action */}
+      {!isReveal?(
+        <button onClick={submitAnswer}
+          disabled={current.questionType!=="text"?selected===null:textVal.trim()===""}
+          style={{width:"100%",padding:"14px",border:"none",borderRadius:"12px",
+            background:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")
+              ?`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`:"rgba(255,255,255,.04)",
+            color:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")?"#1a0e00":"#4a3a20",
+            fontFamily:"'Cinzel',serif",fontSize:"16px",fontWeight:700,
+            cursor:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")?"pointer":"not-allowed",
+            boxShadow:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")
+              ?`0 4px 20px ${tc}33`:"none"}}>
+          ยืนยันคำตอบ
+        </button>
+      ):isCorrectReveal?(
+        <div style={{width:"100%",padding:"14px",borderRadius:"12px",background:"rgba(39,174,96,.08)",
+          border:"1px solid rgba(39,174,96,.25)",color:"#27ae60",fontFamily:"'Cinzel',serif",
+          fontSize:"14px",textAlign:"center"}}>
+          ⏳ กำลังไปข้อถัดไป...
+        </div>
+      ):(
+        <button onClick={handleNextAfterWrong} style={{width:"100%",padding:"14px",border:"none",borderRadius:"12px",
+          background:lives<=0
+            ?"linear-gradient(135deg,#6b1010,#c0392b,#6b1010)"
+            :`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
+          color:lives<=0?"#fff":"#1a0e00",fontFamily:"'Cinzel',serif",fontSize:"16px",fontWeight:700,cursor:"pointer",
+          boxShadow:lives<=0?"0 4px 20px rgba(231,76,60,.4)":`0 4px 20px ${tc}33`}}>
+          {lives<=0?"💀 หมดชีวิต — ดูผลลัพธ์":"→ ข้อถัดไป"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── CHALLENGE RESULT SCREEN ───────────────────────────────
+function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
+  const { history, score, lives, livesMax, reason, student, challengeConfig } = data;
+  const tc = theme.themeColor;
+  const isComplete = reason === "complete";
+  const correctCount = history.filter(h=>h.isCorrect).length;
+  const totalQ = history.length;
+  const maxScore = history.reduce((s,h)=>s+(h.question.points??1),0);
+  let bestStreak=0, cur=0;
+  history.forEach(h=>{ if(h.isCorrect){cur++;bestStreak=Math.max(bestStreak,cur);}else cur=0; });
+
+  const [showDetail,setShowDetail]=useState(false);
+  const [saving,setSaving]=useState(true);
+  const [saveErr,setSaveErr]=useState(false);
 
   useEffect(()=>{
-    const setId = getSetFromUrl();
+    (async()=>{
+      try {
+        await apiPost({
+          action:"saveResult", studentId:student.id,
+          studentName:`${student.firstName} ${student.lastName}`,
+          studentNickname:student.nickname,
+          setName:`[CHALLENGE] ${challengeConfig.challengeName||challengeConfig.setId}`,
+          score:`${score}/${maxScore}`, correctCount:`${correctCount}/${totalQ}`,
+          passed:isComplete?"ผ่าน (ครบจำนวน)":`ไม่ผ่าน (หมดชีวิต ข้อ ${totalQ})`,
+          timeUsed:0,
+          correctIds:history.filter(h=>h.isCorrect).map(h=>h.question.id).join(","),
+          wrongIds:history.filter(h=>!h.isCorrect).map(h=>h.question.id).join(","),
+        });
+      } catch { setSaveErr(true); }
+      setSaving(false);
+    })();
+  },[]);
+
+  return (
+    <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <div style={{maxWidth:"560px",width:"100%",marginTop:"20px",marginBottom:"40px",
+        background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
+        border:`2px solid ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
+        borderRadius:"16px",padding:"32px 28px",boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
+
+        <div style={{textAlign:"center",marginBottom:"24px"}}>
+          <div style={{fontSize:"52px",marginBottom:"6px"}}>{isComplete?"🏆":"💀"}</div>
+          <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"22px",fontWeight:700,
+            color:isComplete?"#27ae60":"#e74c3c",
+            textShadow:`0 0 20px ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
+            {isComplete?"ผ่านครบทุกข้อ!":"หมดชีวิต!"}
+          </div>
+          <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>
+            ⚡ {challengeConfig.challengeName||"Challenge Mode"}
+          </div>
+          <div style={{fontSize:"64px",fontWeight:900,fontFamily:"'Cinzel',serif",color:tc,lineHeight:1,marginTop:"14px"}}>
+            {score}<span style={{fontSize:"24px",color:"#6b5a3e",marginLeft:"4px"}}>คะแนน</span>
+          </div>
+          <div style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginTop:"6px"}}>
+            {student.nickname} · ถูก {correctCount}/{totalQ} ข้อ
+          </div>
+          <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
+            color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
+            {saving?"⏳ กำลังบันทึก...":saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+          {[["✓ ถูก",`${correctCount} ข้อ`,"#27ae60"],["★ คะแนน",`${score}`,tc],
+            ["🔥 Streak",`${bestStreak} ข้อ`,"#f39c12"],["❤️ ชีวิตเหลือ",`${lives}/${livesMax}`,lives>0?"#27ae60":"#6b5a3e"]
+          ].map(([k,v,c])=>(
+            <div key={k} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(212,175,55,.12)",
+              borderRadius:"10px",padding:"12px",textAlign:"center"}}>
+              <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
+              <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginBottom:"12px"}}>
+          <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
+            width:"100%",padding:"13px",
+            background:showDetail?"rgba(212,175,55,.15)":"rgba(212,175,55,.06)",
+            border:`1px solid ${tc}55`,borderRadius:"10px",color:tc,
+            fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
+            {showDetail?"▲ ซ่อนเฉลย":"▼ ดูเฉลยทุกข้อ"}
+          </button>
+        </div>
+
+        {showDetail&&(
+          <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}}>
+            {history.map((h,i)=>{
+              const pts=h.question.points??1;
+              let correctText,selectedText;
+              if(h.question.questionType==="text"){
+                correctText=String(h.question.correctTextAnswer??"-");
+                selectedText=h.userTextAnswer||"ไม่ได้ตอบ";
+              } else {
+                correctText=h.shuffledChoices.find(c=>c.origIndex===h.question.answer)?.text??"-";
+                selectedText=h.selectedOrigIndex!==null
+                  ?h.shuffledChoices.find(c=>c.origIndex===h.selectedOrigIndex)?.text??"-"
+                  :"ไม่ได้ตอบ";
+              }
+              return (
+                <div key={i} style={{background:h.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
+                  border:`1px solid ${h.isCorrect?"rgba(39,174,96,.3)":"rgba(231,76,60,.3)"}`,
+                  borderRadius:"10px",padding:"14px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
+                    <span style={{fontFamily:"'Cinzel',serif",fontSize:"12px",color:h.isCorrect?"#27ae60":"#e74c3c"}}>
+                      {h.isCorrect?"✓":"✗"} ข้อ {h.questionNumber}
+                    </span>
+                    <span style={{background:h.isCorrect?"rgba(39,174,96,.2)":"rgba(231,76,60,.15)",
+                      border:`1px solid ${h.isCorrect?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`,
+                      borderRadius:"12px",padding:"1px 8px",fontSize:"11px",
+                      color:h.isCorrect?"#27ae60":"#e74c3c",fontFamily:"'Cinzel',serif",fontWeight:700}}>
+                      {h.isCorrect?"+":"-"}{pts} คะแนน
+                    </span>
+                    <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>{h.question.setName}</span>
+                  </div>
+                  <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
+                    {h.isCorrect
+                      ?<span>✓ ตอบถูก: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
+                      :<span>คุณตอบ: <span style={{color:"#e74c3c"}}>{selectedText}</span>{" · "}เฉลย: <span style={{color:"#27ae60",fontWeight:600}}>{correctText}</span></span>
+                    }
+                  </div>
+                  <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                    {h.question.linkText&&(
+                      <a href={h.question.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
+                        textDecoration:"none",padding:"4px 12px",border:`1px solid ${tc}55`,
+                        borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
+                    )}
+                    {h.question.linkVideo&&(
+                      <a href={h.question.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
+                        textDecoration:"none",padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
+                        borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
+          <button type="button" onClick={onHome} style={{flex:1,padding:"13px",
+            background:"rgba(212,175,55,.06)",border:`1px solid ${tc}44`,borderRadius:"10px",
+            color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>หน้าหลัก</button>
+          <button type="button" onClick={onRetry} style={{flex:2,padding:"13px",
+            background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
+            border:"none",borderRadius:"10px",color:"#1a0e00",
+            fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer",
+            boxShadow:`0 4px 20px ${tc}33`}}>⚡ ลองใหม่</button>
+        </div>
+
+        <a href={LOOKER_STUDIO_URL} target="_blank" rel="noreferrer" style={{
+          display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",
+          width:"100%",padding:"13px",boxSizing:"border-box",
+          background:"linear-gradient(135deg,rgba(66,133,244,.15),rgba(66,133,244,.05))",
+          border:"1px solid rgba(66,133,244,.4)",borderRadius:"10px",color:"#7ab3f5",
+          fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,textDecoration:"none",
+          transition:"all .2s",boxShadow:"0 2px 12px rgba(66,133,244,.15)"}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="#7ab3f5" strokeWidth="1.5"/>
+            <path d="M8 12 Q12 6 16 12 Q12 18 8 12Z" fill="#7ab3f5" opacity="0.7"/>
+            <circle cx="12" cy="12" r="2.5" fill="#7ab3f5"/>
+          </svg>
+          ดูรายงานผลใน Looker Studio
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN APP ──────────────────────────────────────────────
+export default function App() {
+  const [screen,setScreen]=useState("init");
+  const [selectedSet,setSet]=useState(null);
+  const [student,setStudent]=useState(null);
+  const [questions,setQuestions]=useState([]);
+  const [resultData,setResult]=useState(null);
+  const [loadError,setLoadError]=useState("");
+  const [theme,setTheme]=useState(DEFAULT_THEME);
+  const [mode]=useState(()=>getModeFromUrl());
+  const [challengeConfig,setChallengeConfig]=useState(null);
+  const [challengePool,setChallengePool]=useState([]);
+  const [challengeResult,setChallengeResult]=useState(null);
+  const isDirectLink=!!getSetFromUrl();
+  const isChallenge=mode==="challenge";
+
+  useEffect(()=>{
+    const setId=getSetFromUrl();
     if(setId){
-      const found = QUIZ_SETS.find(s=>s.id===setId);
-      if(found){
-        setSet(found);
-        apiGet({ action:"getConfig", setId }).then(d=>{ if(d.config) setTheme(buildTheme(d.config)); });
-        setScreen("login");
-      } else setScreen("setSelect");
+      apiGet({action:"getConfig",setId}).then(d=>{ if(d.config) setTheme(buildTheme(d.config)); });
+      const pseudoSet={ id:setId, name:setId, total:0, passingScore:0, timeLimit:0 };
+      if(isChallenge){
+        setSet(pseudoSet); setScreen("login");
+      } else {
+        const found=QUIZ_SETS.find(s=>s.id===setId);
+        if(found){ setSet(found); setScreen("login"); }
+        else setScreen("setSelect");
+      }
     } else setScreen("setSelect");
   },[]);
 
+  // Normal loading
   useEffect(()=>{
-    if(screen!=="loading"||!selectedSet||!student) return;
+    if(screen!=="loading"||!selectedSet||!student||isChallenge) return;
     setLoadError("");
     Promise.all([
-      apiGet({ action:"getQuestions", setName:selectedSet.id }),
-      apiGet({ action:"getConfig", setId:selectedSet.id }),
+      apiGet({action:"getQuestions",setName:selectedSet.id}),
+      apiGet({action:"getConfig",setId:selectedSet.id}),
     ]).then(([qData,cfgData])=>{
       if(!qData.questions?.length){ setLoadError("ไม่พบข้อสอบในชุด "+selectedSet.id); return; }
-      const cfg = buildTheme(cfgData.config);
-      const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
-      setQuestions(
-        shouldShuffle
-          ? selectQuestions(qData.questions, selectedSet.total)
-          : orderQuestions(qData.questions, selectedSet.total)
-      );
-      setTheme(cfg);
+      const shouldShuffle=cfgData.config?.shuffleQuestions!==false;
+      setQuestions(shouldShuffle
+        ?selectQuestions(qData.questions,selectedSet.total)
+        :orderQuestions(qData.questions,selectedSet.total));
+      setTheme(buildTheme(cfgData.config));
       setScreen("quiz");
     }).catch(()=>setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
   },[screen]);
 
-  const goRetry = ()=>{ setQuestions([]); setResult(null); setScreen("loading"); };
-  const goHome = ()=>{
+  // Challenge loading
+  useEffect(()=>{
+    if(screen!=="loading"||!selectedSet||!student||!isChallenge) return;
+    setLoadError("");
+    const setId=selectedSet.id;
+    apiGet({action:"getChallengeConfig",setId}).then(async cfgData=>{
+      const cc=cfgData.challengeConfig;
+      if(!cc){ setLoadError("ไม่พบ Challenge Config สำหรับ "+setId); return; }
+      setChallengeConfig(cc);
+      const setIds=cc.challengeSets||[];
+      const allQ=await Promise.all(
+        setIds.map(sid=>apiGet({action:"getQuestions",setName:sid}).then(d=>d.questions||[]))
+      );
+      const pool=shuffle(allQ.flat());
+      if(!pool.length){ setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
+      setChallengePool(pool);
+      setScreen("challenge");
+    }).catch(()=>setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
+  },[screen]);
+
+  const goHome=()=>{
     setResult(null); setQuestions([]);
+    setChallengeResult(null); setChallengePool([]);
     if(isDirectLink){ setStudent(null); setScreen("login"); }
     else { setSet(null); setStudent(null); setScreen("setSelect"); }
   };
+  const goRetry=()=>{
+    setQuestions([]); setResult(null);
+    setChallengeResult(null); setChallengePool([]);
+    setScreen("loading");
+  };
 
-  const tc = theme.themeColor;
-  const bg = theme.bgImageUrl
-    ? `url(${theme.bgImageUrl}) center/cover fixed, ${theme.bgColor}`
-    : `radial-gradient(ellipse at 20% 50%,rgba(55,32,8,.45) 0%,transparent 60%),${theme.bgColor}`;
+  const tc=theme.themeColor;
+  const bg=theme.bgImageUrl
+    ?`url(${theme.bgImageUrl}) center/cover fixed, ${theme.bgColor}`
+    :`radial-gradient(ellipse at 20% 50%,rgba(55,32,8,.45) 0%,transparent 60%),${theme.bgColor}`;
 
   if(screen==="init") return <div style={{minHeight:"100vh",background:theme.bgColor}}/>;
 
@@ -1057,6 +1318,7 @@ export default function App() {
         body{background:${theme.bgColor};}
         @keyframes pfloat{0%,100%{transform:translateY(0)scale(1);opacity:.3}50%{transform:translateY(-18px)scale(1.2);opacity:.65}}
         @keyframes pspin{to{transform:rotate(360deg)}}
+        @keyframes heartshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
         input:focus{border-color:${tc}99!important;box-shadow:0 0 0 2px ${tc}22;}
         button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
         button{transition:all .18s;}
@@ -1066,21 +1328,26 @@ export default function App() {
       `}</style>
       <div style={{minHeight:"100vh",fontFamily:"'Sarabun',sans-serif",background:bg}}>
         <Particles color={tc}/>
+
         {screen==="setSelect"&&(
           <SetSelectScreen onSelect={s=>{
             setSet(s);
-            apiGet({ action:"getConfig", setId:s.id }).then(d=>{ if(d.config) setTheme(buildTheme(d.config)); });
+            apiGet({action:"getConfig",setId:s.id}).then(d=>{ if(d.config) setTheme(buildTheme(d.config)); });
             setScreen("login");
           }} theme={theme}/>
         )}
+
         {screen==="login"&&selectedSet&&(
           <LoginScreen set={selectedSet} theme={theme} isDirectLink={isDirectLink}
-            onConfirm={st=>{setStudent(st);setScreen("loading");}}
-            onBack={()=>{setSet(null);setScreen("setSelect");}}/>
+            isChallenge={isChallenge}
+            challengeLabel={challengeConfig?.challengeName}
+            onConfirm={st=>{ setStudent(st); setScreen("loading"); }}
+            onBack={()=>{ setSet(null); setScreen("setSelect"); }}/>
         )}
+
         {screen==="loading"&&(
           loadError
-            ? <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+            ?<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
                 <div style={{maxWidth:"400px",width:"100%",
                   background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
                   border:`2px solid ${tc}55`,borderRadius:"16px",padding:"32px",
@@ -1091,17 +1358,28 @@ export default function App() {
                     fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>กลับหน้าหลัก</button>
                 </div>
               </div>
-            : <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            :<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <Spinner color={tc}/>
               </div>
         )}
+
         {screen==="quiz"&&selectedSet&&student&&questions.length>0&&(
           <QuizScreen set={selectedSet} student={student} questions={questions}
-            onFinish={d=>{setResult(d);setScreen("result");}} theme={theme}/>
+            onFinish={d=>{ setResult(d); setScreen("result"); }} theme={theme}/>
         )}
         {screen==="result"&&resultData&&(
           <ResultScreen data={resultData} onRetry={goRetry} onHome={goHome}
             isDirectLink={isDirectLink} theme={theme}/>
+        )}
+
+        {screen==="challenge"&&challengeConfig&&student&&challengePool.length>0&&(
+          <ChallengeScreen key={Date.now()}
+            challengeConfig={challengeConfig} student={student} pool={challengePool}
+            onFinish={d=>{ setChallengeResult(d); setScreen("challenge-result"); }}
+            theme={theme}/>
+        )}
+        {screen==="challenge-result"&&challengeResult&&(
+          <ChallengeResultScreen data={challengeResult} onRetry={goRetry} onHome={goHome} theme={theme}/>
         )}
       </div>
     </>
