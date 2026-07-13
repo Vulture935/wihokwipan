@@ -926,7 +926,7 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
               {challengeConfig.logoImageUrl
                 ? <img src={challengeConfig.logoImageUrl} alt="logo"
                     style={{width:"22px",height:"22px",borderRadius:"50%",objectFit:"cover"}}
-                    onError={e=>e.target.style.display="none"}/>
+                    onError={e=>e.currentTarget.style.display="none"}/>
                 : <span style={{fontSize:"16px"}}>{challengeConfig.logoEmoji||"⚡"}</span>
               }
               <span style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
