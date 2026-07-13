@@ -17,12 +17,7 @@ const QUIZ_SETS = [
   { id:"SKR-166", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566", total:40, passingScore:32, timeLimit:120*60 },
   { id:"SPR-266", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2566", total:10, passingScore:8, timeLimit:30*60 },
   { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:27, passingScore:36, timeLimit:90*60 },
-  { id:"FT-BASIC1", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ตัวประกอบ + จำนวนเฉพาะ", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC2", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC3", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ แบ่งของ + สี่เหลี่ยม 2 อัน", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC4", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. ปักเสา", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC5", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ ห.ร.ม. รวม", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FR-BASIC1", name:"เศษส่วน ป.6 เข้า ม.1 โจทย์ยอดนิยม เศษส่วน", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC1", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ + จำนวนเฉพาะ", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SKR-166-BB", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับบาร์บี้", total:20, passingScore:16, timeLimit:60*60 },
 ];
 
@@ -60,17 +55,10 @@ function shuffle(arr) {
   for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
   return a;
 }
-function selectQuestions(questions: any[], count: number) {
-  // 1. เติม Record<string, any[]> เพื่อบอกว่า Object นี้มีค่า value เป็น Array
-  const groups: Record<string, any[]> = {}; 
-
-  questions.forEach(q => { 
-    if (!groups[q.groupId]) groups[q.groupId] = []; 
-    groups[q.groupId].push(q); 
-  });
-
-  // 2. ตอนนี้ TypeScript จะรู้แล้วว่า g คือ Array และยอมให้เรียกใช้ g.length ได้
-  return shuffle(Object.values(groups).map(g => g[Math.floor(Math.random() * g.length)])).slice(0, count);
+function selectQuestions(questions, count) {
+  const groups={};
+  questions.forEach(q=>{ if(!groups[q.groupId]) groups[q.groupId]=[]; groups[q.groupId].push(q); });
+  return shuffle(Object.values(groups).map(g=>g[Math.floor(Math.random()*g.length)])).slice(0,count);
 }
 function orderQuestions(questions, count) {
   const groups={}, order=[];
@@ -197,20 +185,14 @@ function CharacterPopup({ charData, status, onClose, tc }) {
           boxShadow:`0 0 12px ${statusColor}44`}}>
           {status==="perfect"?"★ ได้เต็ม!":status==="pass"?"✓ ผ่านแล้ว!":"✗ ยังไม่ผ่าน"}
         </div>
-        {imageUrl && (
-        <div style={{
-        margin: "0 auto 16px", width: "200px", height: "200px", borderRadius: "16px",
-        overflow: "hidden", border: `2px solid ${statusColor}44`, boxShadow: `0 0 30px ${statusColor}33`,
-        background: "rgba(0,0,0,0.3)"
-        }}>
-    <img 
-      src={imageUrl} 
-      alt="character" 
-      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-      onError={e => { e.currentTarget.style.display = "none"; }} 
-    />
-  </div>
-)}
+        {imageUrl&&(
+          <div style={{margin:"0 auto 16px",width:"200px",height:"200px",borderRadius:"16px",
+            overflow:"hidden",border:`2px solid ${statusColor}44`,boxShadow:`0 0 30px ${statusColor}33`,
+            background:"rgba(0,0,0,0.3)"}}>
+            <img src={imageUrl} alt="character" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+              onError={e=>{e.target.style.display="none";}}/>
+          </div>
+        )}
         <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",lineHeight:1.6,
           margin:"0 0 20px",textShadow:`0 0 10px ${statusColor}44`}}>{message}</p>
         <button onClick={handleClose} style={{width:"100%",padding:"12px",
@@ -235,6 +217,29 @@ function LifeHearts({ total, remaining }) {
       ))}
     </div>
   );
+}
+
+// ── Challenge Logo (Emoji หรือรูปจาก Drive) ──────────────
+function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
+  if (logoImageUrl) {
+    return (
+      <div style={{
+        width: size+"px", height: size+"px",
+        borderRadius: "50%",
+        overflow: "hidden",
+        margin: "0 auto",
+        border: "2px solid rgba(231,76,60,.5)",
+        boxShadow: "0 0 20px rgba(231,76,60,.4)",
+        background: "rgba(0,0,0,0.3)",
+      }}>
+        <img src={logoImageUrl} alt="logo"
+          style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+          onError={e=>{ e.target.style.display="none"; e.target.parentNode.innerHTML = logoEmoji||"⚡"; }}
+        />
+      </div>
+    );
+  }
+  return <div style={{fontSize:size+"px",textAlign:"center",lineHeight:1}}>{logoEmoji||"⚡"}</div>;
 }
 
 // ── SET SELECT ────────────────────────────────────────────
@@ -283,7 +288,7 @@ function SetSelectScreen({ onSelect, theme }) {
 }
 
 // ── LOGIN ─────────────────────────────────────────────────
-function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme, isChallenge, challengeLabel }) {
+function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme, isChallenge, challengeConfig, challengeLabel }) {
   const [sid,setSid]=useState("");
   const [student,setStudent]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -312,7 +317,16 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme, isChallenge,
           </button>
         )}
         <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{fontSize:"44px",marginBottom:"8px"}}>{isChallenge?"⚡":theme.logoEmoji}</div>
+          <div style={{marginBottom:"10px"}}>
+            {isChallenge
+              ? <ChallengeLogo
+                  logoImageUrl={challengeConfig?.logoImageUrl||""}
+                  logoEmoji={challengeConfig?.logoEmoji||"⚡"}
+                  size={52}
+                />
+              : <div style={{fontSize:"44px",lineHeight:1}}>{theme.logoEmoji}</div>
+            }
+          </div>
           <h1 style={{fontFamily:"'Cinzel Decorative',serif",
             color:isChallenge?"#e74c3c":tc,fontSize:theme.fontSize,
             margin:"0 0 4px",textShadow:`0 0 20px ${isChallenge?"rgba(231,76,60,.4)":tc+"44"}`}}>
@@ -464,7 +478,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   const [allShuffled]=useState(()=>
     questions.map(q=>q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))))
   );
-const finish=useCallback((timeUp=false)=>{
+  const finish=useCallback((timeUp=false)=>{
     clearInterval(timerRef.current);
     const timeUsed=set.timeLimit-timeLeft;
     const results=questions.map((q,qi)=>{
@@ -489,8 +503,7 @@ const finish=useCallback((timeUp=false)=>{
 
   useEffect(()=>{
     if(questions[current]?.questionType==="text")
-      // แก้ไขจุดนี้โดยการครอบวงเล็บและเติม as HTMLInputElement เข้าไปครับ
-      setTimeout(()=>(document.querySelector("input[inputmode='decimal']") as HTMLInputElement)?.focus(),100);
+      setTimeout(()=>document.querySelector("input[inputmode='decimal']")?.focus(),100);
   },[current]);
 
   const q=questions[current];
@@ -909,8 +922,16 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
         border:`1px solid ${ACCENT}44`,borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
           <div>
-            <div style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
-              ⚡ {challengeName||"Challenge Mode"}
+            <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+              {challengeConfig.logoImageUrl
+                ? <img src={challengeConfig.logoImageUrl} alt="logo"
+                    style={{width:"22px",height:"22px",borderRadius:"50%",objectFit:"cover"}}
+                    onError={e=>e.target.style.display="none"}/>
+                : <span style={{fontSize:"16px"}}>{challengeConfig.logoEmoji||"⚡"}</span>
+              }
+              <span style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
+                {challengeName||"Challenge Mode"}
+              </span>
             </div>
             <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginTop:"1px"}}>
               {student.nickname} · ข้อที่ {questionNum+1}{maxQuestions>0?` / ${maxQuestions}`:""}
@@ -1109,7 +1130,19 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
         borderRadius:"16px",padding:"32px 28px",boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
 
         <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{fontSize:"52px",marginBottom:"6px"}}>{isComplete?"🏆":"💀"}</div>
+          <div style={{marginBottom:"8px"}}>
+            {data.challengeConfig?.logoImageUrl
+              ? <div style={{position:"relative",display:"inline-block"}}>
+                  <img src={data.challengeConfig.logoImageUrl} alt="logo"
+                    style={{width:"60px",height:"60px",borderRadius:"50%",objectFit:"cover",
+                      border:`2px solid ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
+                      boxShadow:`0 0 20px ${isComplete?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`}}
+                    onError={e=>e.target.style.display="none"}/>
+                  <span style={{position:"absolute",bottom:"-4px",right:"-4px",fontSize:"22px"}}>{isComplete?"🏆":"💀"}</span>
+                </div>
+              : <span style={{fontSize:"52px"}}>{isComplete?"🏆":"💀"}</span>
+            }
+          </div>
           <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"22px",fontWeight:700,
             color:isComplete?"#27ae60":"#e74c3c",
             textShadow:`0 0 20px ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
@@ -1354,6 +1387,7 @@ export default function App() {
         {screen==="login"&&selectedSet&&(
           <LoginScreen set={selectedSet} theme={theme} isDirectLink={isDirectLink}
             isChallenge={isChallenge}
+            challengeConfig={challengeConfig}
             challengeLabel={challengeConfig?.challengeName}
             onConfirm={st=>{ setStudent(st); setScreen("loading"); }}
             onBack={()=>{ setSet(null); setScreen("setSelect"); }}/>
