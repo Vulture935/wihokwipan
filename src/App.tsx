@@ -503,7 +503,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
 
   useEffect(()=>{
     if(questions[current]?.questionType==="text")
-      setTimeout(()=>document.querySelector("input[inputmode='decimal']")?.focus(),100);
+      setTimeout(()=>(document.querySelector("input[inputmode='decimal']") as HTMLInputElement)?.focus(),100);
   },[current]);
 
   const q=questions[current];
