@@ -190,7 +190,7 @@ function CharacterPopup({ charData, status, onClose, tc }) {
             overflow:"hidden",border:`2px solid ${statusColor}44`,boxShadow:`0 0 30px ${statusColor}33`,
             background:"rgba(0,0,0,0.3)"}}>
             <img src={imageUrl} alt="character" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
-              onError={e=>{e.target.style.display="none";}}/>
+              onError={e=>{(e.target as HTMLImageElement).style.display="none";}}/>
           </div>
         )}
         <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",lineHeight:1.6,
