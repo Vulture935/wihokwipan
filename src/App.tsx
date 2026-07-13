@@ -1137,7 +1137,7 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
                     style={{width:"60px",height:"60px",borderRadius:"50%",objectFit:"cover",
                       border:`2px solid ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
                       boxShadow:`0 0 20px ${isComplete?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`}}
-                    onError={e=>e.target.style.display="none"}/>
+                    onError={e=>e.currentTarget.style.display="none"}/>
                   <span style={{position:"absolute",bottom:"-4px",right:"-4px",fontSize:"22px"}}>{isComplete?"🏆":"💀"}</span>
                 </div>
               : <span style={{fontSize:"52px"}}>{isComplete?"🏆":"💀"}</span>
