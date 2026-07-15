@@ -12,13 +12,18 @@ const QUIZ_SETS = [
   { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน", total:10, passingScore:8, timeLimit:30*60 },
   { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ", total:10, passingScore:8, timeLimit:30*60 },
   { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC2", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC3", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. แบ่งของ+สี่เหลี่ยม 2 อัน", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC4", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. ปักเสา", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FT-BASIC5", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. รวม", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"FR-BASIC1", name:"เศษส่วน ป.6 เข้า ม.1 ยอดนิยม เศษส่วนซ้อน", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"RT-BASIC1", name:"อัตราส่วน ป.6 เข้า ม.1 อัตราส่วน ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SPR-164", name:"Pre Test สายปัญญารังสิต ม.1 2564", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SPR-166", name:"Pre Test สายปัญญารังสิต ม.1 2566", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SKR-166", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566", total:40, passingScore:32, timeLimit:120*60 },
-  { id:"SPR-266", name:"ทบทวน Pre Test สายปัญญารังสิต ม.1 2566", total:10, passingScore:8, timeLimit:30*60 },
   { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:27, passingScore:36, timeLimit:90*60 },
   { id:"FT-BASIC1", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ + จำนวนเฉพาะ", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"SKR-166-BB", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับบาร์บี้", total:20, passingScore:16, timeLimit:60*60 },
+  { id:"SKR-166-BB", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับBB", total:20, passingScore:16, timeLimit:60*60 },
 ];
 
 const DEFAULT_THEME = {
