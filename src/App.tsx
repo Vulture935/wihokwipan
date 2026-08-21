@@ -23,6 +23,7 @@ const QUIZ_SETS = [
   { id:"RT-BASIC7", name:"อัตราส่วน ป.6 เข้า ม.1 ร้อยละ ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
   { id:"RT-BASIC8", name:"อัตราส่วน ป.6 เข้า ม.1 ร้อยละ ส่วนลับ", total:10, passingScore:8, timeLimit:30*60 },
   { id:"GM-BASIC1", name:"เรขาคณิต ป.6 เข้า ม.1 เรขาคณิต พ.ท. รวม", total:10, passingScore:8, timeLimit:30*60 },
+  { id:"GM-BASIC2", name:"เรขาคณิต ป.6 เข้า ม.1 เรขาคณิต มุม เส้นขนาน", total:10, passingScore:8, timeLimit:30*60 },
   { id:"SPR-164", name:"Pre Test สายปัญญารังสิต ม.1 2564", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SPR-166", name:"Pre Test สายปัญญารังสิต ม.1 2566", total:20, passingScore:16, timeLimit:60*60 },
   { id:"SKR-166", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566", total:40, passingScore:32, timeLimit:120*60 },
