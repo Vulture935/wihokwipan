@@ -1,5 +1,57 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// ── Markdown renderer แบบ lightweight ไม่ต้องติดตั้ง library ──
+// รองรับ: **bold**, *italic*, `code`, ~~strikethrough~~, newline
+function MdText({ children, style = {} }) {
+  if (!children) return null;
+  const text = String(children);
+ 
+  // แปลง markdown เป็น HTML
+  const html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    // bold+italic
+    .replace(/\*\*\*(.*?)\*\*\*/g, "<strong><em>$1</em></strong>")
+    // bold
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    // italic
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    // strikethrough
+    .replace(/~~(.*?)~~/g, "<s>$1</s>")
+    // inline code
+    .replace(/`(.*?)`/g, "<code style='background:rgba(212,175,55,0.15);padding:1px 5px;border-radius:4px;font-family:monospace;font-size:0.9em'>$1</code>")
+    // newline
+    .replace(/\n/g, "<br/>");
+ 
+  return (
+    <span
+      style={style}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+ 
+// ── แสดงโจทย์ข้อความ (รองรับ Markdown หลายบรรทัด) ──
+function QuestionText({ text, style = {} }) {
+  if (!text) return null;
+  return (
+    <p style={{
+      color: "#f5e6c8",
+      fontFamily: "'Sarabun',sans-serif",
+      fontSize: "18px",
+      textAlign: "center",
+      margin: 0,
+      lineHeight: 1.8,
+      ...style,
+    }}>
+      <MdText>{text}</MdText>
+    </p>
+  );
+}
+ 
+// ─────────────────────────────────────────────────────────────
+
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbwtjTq25C0pURGGNsPMJ76iAbpzM3R9awJmswQUsQb1NrEG790gZc-_gsvPoXOTcCab/exec";
 
