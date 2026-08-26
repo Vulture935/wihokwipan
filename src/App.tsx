@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 
 // ============================================================
 // MARKDOWN RENDERER — ไม่ต้องติดตั้ง library เพิ่ม
@@ -6,15 +10,19 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ============================================================
 function MdText({ children, style = {} }) {
   if (!children) return null;
-  const html = String(children)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/\*\*\*(.*?)\*\*\*/g, "<strong><em>$1</em></strong>")
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/~~(.*?)~~/g, "<s>$1</s>")
-    .replace(/`(.*?)`/g, "<code style='background:rgba(212,175,55,0.15);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:0.9em'>$1</code>")
-    .replace(/\n/g, "<br/>");
-  return <span style={style} dangerouslySetInnerHTML={{ __html: html }}/>;
+  return (
+    <span style={{ display: "inline-block", ...style }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          p: ({ node, ...props }) => <span {...props} />,
+        }}
+      >
+        {String(children)}
+      </ReactMarkdown>
+    </span>
+  );
 }
 
 // โจทย์ข้อความ (ใช้ MdText)
