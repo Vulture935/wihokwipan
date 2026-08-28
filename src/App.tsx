@@ -325,6 +325,19 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme, isChallenge,
   const [student,setStudent]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
+// ⚡ Warm-up Apps Script ระหว่างรอกรอกรหัส (ช่วยลดอาการ Cold Start)
+  useEffect(() => {
+    let isCancelled = false;
+
+    apiGet({ action: "ping" })
+      .catch(() => {
+        // เงียบไว้หากเกิด Error ไม่ให้กระทบ UX ของผู้ใช้
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
   const tc=theme.themeColor;
   const lookup=async()=>{
     if(!sid.trim()) return;
