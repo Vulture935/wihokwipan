@@ -76,7 +76,7 @@ const QUIZ_SETS = [
   { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:27, passingScore:36, timeLimit:90*60 },
   { id:"SKR-166-??", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับBB", total:20, passingScore:16, timeLimit:60*60 },
   { id:"PW8-BASIC1", name:"สมบัติเลขยกกำลัง ม.2 สมบัติ 7+2 ข้อ", total:15, passingScore:12, timeLimit:45*60 },
-  { id:"PW8-BASIC4", name:"สมบัติเลขยกกำลัง ม.2 แยกฐาน", total:20, passingScore:8, timeLimit:30*60 },
+  { id:"PW8-BASIC4", name:"สมบัติเลขยกกำลัง ม.2 แยกฐาน", total:10, passingScore:8, timeLimit:30*60 },
 ];
 
 const DEFAULT_THEME = {
