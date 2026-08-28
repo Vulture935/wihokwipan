@@ -1268,13 +1268,19 @@ export default function App() {
   const [challengeConfig,setChallengeConfig]=useState(null);
   const [challengePool,setChallengePool]=useState([]);
   const [challengeResult,setChallengeResult]=useState(null);
+  const [cachedConfig, setCachedConfig] = useState(null);
   const isDirectLink=!!getSetFromUrl();
   const isChallenge=mode==="challenge";
 
   useEffect(()=>{
     const setId=getSetFromUrl();
     if(setId){
-      apiGet({action:"getConfig",setId}).then(d=>{ if(d.config) setTheme(buildTheme(d.config)); });
+    apiGet({action:"getConfig",setId}).then(d=>{ 
+      if(d.config) {
+        setTheme(buildTheme(d.config)); 
+        setCachedConfig(d.config); 
+      } 
+    });
       const pseudoSet={ id:setId, name:setId, total:0, passingScore:0, timeLimit:0 };
       if(isChallenge){
         setSet(pseudoSet); setScreen("login");
@@ -1289,19 +1295,22 @@ export default function App() {
   useEffect(()=>{
     if(screen!=="loading"||!selectedSet||!student||isChallenge) return;
     setLoadError("");
-    Promise.all([
-      apiGet({action:"getQuestions",setName:selectedSet.id}),
-      apiGet({action:"getConfig",setId:selectedSet.id}),
-    ]).then(([qData,cfgData])=>{
-      if(!qData.questions?.length){ setLoadError("ไม่พบข้อสอบในชุด "+selectedSet.id); return; }
-      const shouldShuffle=cfgData.config?.shuffleQuestions!==false;
-      setQuestions(shouldShuffle
-        ?selectQuestions(qData.questions,selectedSet.total)
-        :orderQuestions(qData.questions,selectedSet.total));
-      setTheme(buildTheme(cfgData.config));
-      setScreen("quiz");
-    }).catch(()=>setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
-  },[screen]);
+    // 👇 ปรับแก้ไข Promise.all ตรงนี้
+  Promise.all([
+    apiGet({action:"getQuestions",setName:selectedSet.id}),
+    cachedConfig 
+      ? Promise.resolve({config:cachedConfig}) 
+      : apiGet({action:"getConfig",setId:selectedSet.id}),
+  ]).then(([qData,cfgData])=>{
+    if(!qData.questions?.length){ setLoadError("ไม่พบข้อสอบในชุด "+selectedSet.id); return; }
+    const shouldShuffle=cfgData.config?.shuffleQuestions!==false;
+    setQuestions(shouldShuffle
+      ?selectQuestions(qData.questions,selectedSet.total)
+      :orderQuestions(qData.questions,selectedSet.total));
+    setTheme(buildTheme(cfgData.config));
+    setScreen("quiz");
+  }).catch(()=>setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
+},[screen, cachedConfig]); // 👈 เพิ่ม cachedConfig ใน dependency array
 
   useEffect(()=>{
     if(screen!=="loading"||!selectedSet||!student||!isChallenge) return;
@@ -1323,11 +1332,12 @@ export default function App() {
   },[screen]);
 
   const goHome=()=>{
-    setResult(null); setQuestions([]);
-    setChallengeResult(null); setChallengePool([]);
-    if(isDirectLink){ setStudent(null); setScreen("login"); }
-    else { setSet(null); setStudent(null); setScreen("setSelect"); }
-  };
+  setResult(null); setQuestions([]);
+  setChallengeResult(null); setChallengePool([]);
+  setCachedConfig(null); // 👈 เพิ่มบรรทัดนี้เพื่อล้าง cache ชุดเดิม
+  if(isDirectLink){ setStudent(null); setScreen("login"); }
+  else { setSet(null); setStudent(null); setScreen("setSelect"); }
+};
   const goRetry=()=>{
     setQuestions([]); setResult(null);
     setChallengeResult(null); setChallengePool([]);
@@ -1362,9 +1372,14 @@ export default function App() {
         {screen==="setSelect"&&(
           <SetSelectScreen onSelect={s=>{
             setSet(s);
-            apiGet({action:"getConfig",setId:s.id}).then(d=>{ if(d.config) setTheme(buildTheme(d.config)); });
-            setScreen("login");
-          }} theme={theme}/>
+            apiGet({action:"getConfig",setId:s.id}).then(d=>{ 
+      if(d.config) {
+        setTheme(buildTheme(d.config)); 
+        setCachedConfig(d.config); 
+        } 
+        });
+        setScreen("login");
+        }} theme={theme}/>
         )}
         {screen==="login"&&selectedSet&&(
           <LoginScreen set={selectedSet} theme={theme} isDirectLink={isDirectLink}
