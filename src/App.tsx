@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -9,7 +9,13 @@ import "katex/dist/katex.min.css"; // 👈 เพิ่มบรรทัดน�
 // รองรับ: **bold**, *italic*, `code`, ~~strikethrough~~, \n
 // ============================================================
 // ✅ เปลี่ยนเป็นอันนี้ (แสดงสมการและ Markdown ได้สมบูรณ์)
-function MdText({ children, style = {} }) {
+const MdText = React.memo(function MdText({
+  children,
+  style = {},
+}: {
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
   if (!children) return null;
   return (
     <span style={{ display: "inline-block", ...style }}>
@@ -24,7 +30,7 @@ function MdText({ children, style = {} }) {
       </ReactMarkdown>
     </span>
   );
-}
+});
 
 // โจทย์ข้อความ (ใช้ MdText)
 function QuestionText({ text }) {
