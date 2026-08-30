@@ -576,17 +576,36 @@ function AnswerRow({ r, i, tc }) {
         }
       </div>
       <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-        {r.question.linkText&&(
-          <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
-            textDecoration:"none",padding:"4px 12px",border:`1px solid ${tc}55`,
-            borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
-        )}
-        {r.question.linkVideo&&(
-          <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
-            textDecoration:"none",padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
-            borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
-        )}
-      </div>
+        {/* ✅ ข้อความเฉลย (Column Q) — แสดงถ้ามี */}
+{r.question.solutionText && (
+  <div style={{
+    marginTop:"10px",padding:"12px 14px",
+    background:"rgba(212,175,55,.06)",
+    border:"1px solid rgba(212,175,55,.2)",
+    borderRadius:"10px",
+    fontFamily:"'Sarabun',sans-serif",fontSize:"14px",
+    color:"#c0a878",lineHeight:1.8,
+  }}>
+    <div style={{color:"#8b7355",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"6px"}}>
+      📝 วิธีทำ / เฉลย
+    </div>
+    <MdText>{r.question.solutionText}</MdText>
+  </div>
+)}
+
+{/* links เดิม */}
+<div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"8px"}}>
+  {r.question.linkText&&(
+    <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
+      textDecoration:"none",padding:"4px 12px",border:`1px solid ${tc}55`,
+      borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
+  )}
+  {r.question.linkVideo&&(
+    <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
+      textDecoration:"none",padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
+      borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
+  )}
+</div>
     </div>
   );
 }
