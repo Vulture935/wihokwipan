@@ -533,17 +533,18 @@ function QuestionBox({ q, current, tc }) {
 }
 
 // ── เฉลย — ใช้ MdText ────────────────────────────────────
+// ── เฉลย — รองรับ solutionText + links ──────────────────
 function AnswerRow({ r, i, tc }) {
-  const pts=r.question.points??1;
+  const pts = r.question.points ?? 1;
   let correctText, selectedText;
-  if(r.question.questionType==="text"){
-    correctText=String(r.question.correctTextAnswer??"-");
-    selectedText=r.userTextAnswer||"ไม่ได้ตอบ";
+  if (r.question.questionType === "text") {
+    correctText = String(r.question.correctTextAnswer ?? "-");
+    selectedText = r.userTextAnswer || "ไม่ได้ตอบ";
   } else {
-    correctText=r.shuffledChoices.find(c=>c.origIndex===r.question.answer)?.text??"-";
-    selectedText=r.selectedOrigIndex!==null
-      ?r.shuffledChoices.find(c=>c.origIndex===r.selectedOrigIndex)?.text??"-"
-      :"ไม่ได้ตอบ";
+    correctText = r.shuffledChoices.find(c => c.origIndex === r.question.answer)?.text ?? "-";
+    selectedText = r.selectedOrigIndex !== null
+      ? r.shuffledChoices.find(c => c.origIndex === r.selectedOrigIndex)?.text ?? "-"
+      : "ไม่ได้ตอบ";
   }
   return (
     <div style={{background:r.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
@@ -565,7 +566,6 @@ function AnswerRow({ r, i, tc }) {
         )}
         {r.question.isRare&&<span style={{color:"#9b59b6",fontSize:"11px"}}>✦ หายาก</span>}
       </div>
-      {/* ✅ เฉลยรองรับ Markdown */}
       <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
         {r.isCorrect
           ? <span>✓ ตอบถูก: <strong style={{color:"#27ae60"}}><MdText>{correctText}</MdText></strong></span>
@@ -575,7 +575,26 @@ function AnswerRow({ r, i, tc }) {
             </span>
         }
       </div>
-      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+
+      {/* ✅ ข้อความเฉลย (Column Q) — แสดงถ้ามี */}
+      {r.question.solutionText && (
+        <div style={{
+          marginTop:"10px",padding:"12px 14px",
+          background:"rgba(212,175,55,.06)",
+          border:"1px solid rgba(212,175,55,.2)",
+          borderRadius:"10px",
+          fontFamily:"'Sarabun',sans-serif",fontSize:"14px",
+          color:"#c0a878",lineHeight:1.8,
+        }}>
+          <div style={{color:"#8b7355",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"6px"}}>
+            📝 วิธีทำ / เฉลย
+          </div>
+          <MdText>{r.question.solutionText}</MdText>
+        </div>
+      )}
+
+      {/* links เดิม */}
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"8px"}}>
         {r.question.linkText&&(
           <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
             textDecoration:"none",padding:"4px 12px",border:`1px solid ${tc}55`,
