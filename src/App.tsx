@@ -77,7 +77,7 @@ const QUIZ_SETS = [
   { id:"TEDET-2567", name:"ข้อสอบแข่งขัน TEDET ป.6 2567", total:20, passingScore:16, timeLimit:80*60 },
   { id:"SKR-166-??", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับBB", total:20, passingScore:16, timeLimit:60*60 },
   { id:"PW8-BASIC1", name:"สมบัติเลขยกกำลัง ม.2 สมบัติ 7+2 ข้อ", total:15, passingScore:12, timeLimit:45*60 },
-  { id:"PW8-BASIC3", name:"สมบัติเลขยกกำลัง ม.2 สมการ", total:36, passingScore:12, timeLimit:45*60 },
+  { id:"PW8-BASIC3", name:"สมบัติเลขยกกำลัง ม.2 สมการ", total:15, passingScore:12, timeLimit:45*60 },
   { id:"PW8-BASIC4", name:"สมบัติเลขยกกำลัง ม.2 แยกฐาน", total:10, passingScore:8, timeLimit:30*60 },
 ];
 
