@@ -51,35 +51,17 @@ const APPS_SCRIPT_URL =
 const LOOKER_STUDIO_URL =
   "https://datastudio.google.com/reporting/c1d52161-5387-4f00-bcda-b70b54116fc5/page/p_h1rlukz72d";
 
-const QUIZ_SETS = [
-  { id:"EQ-BASIC5", name:"สมการ ป.6 เข้า ม.1 สมการ เงิน คน สัตว์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC4", name:"สมการ ป.6 เข้า ม.1 สมการ ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC3", name:"สมการ ป.6 เข้า ม.1 สมการ เศษส่วน", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC2", name:"สมการ ป.6 เข้า ม.1 สมการ วงเล็บ", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"EQ-BASIC1", name:"สมการ ป.6 เข้า ม.1 สมการ ย้ายห่าง", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC1", name:"ตัวประกอบ ป.6 เข้า ม.1 ตัวประกอบ + จำนวนเฉพาะ", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC2", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC3", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. แบ่งของ+สี่เหลี่ยม 2 อัน", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC4", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. ปักเสา", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FT-BASIC5", name:"ตัวประกอบ ป.6 เข้า ม.1 ห.ร.ม. รวม", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"FR-BASIC1", name:"เศษส่วน ป.6 เข้า ม.1 ยอดนิยม เศษส่วนซ้อน", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"RT-BASIC1", name:"อัตราส่วน ป.6 เข้า ม.1 อัตราส่วน ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"RT-BASIC2", name:"อัตราส่วน ป.6 เข้า ม.1 อัตราส่วน ส่วนลับ", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"RT-BASIC7", name:"อัตราส่วน ป.6 เข้า ม.1 ร้อยละ ไม่มีโจทย์", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"RT-BASIC8", name:"อัตราส่วน ป.6 เข้า ม.1 ร้อยละ ส่วนลับ", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"GM-BASIC1", name:"เรขาคณิต ป.6 เข้า ม.1 เรขาคณิต พ.ท. รวม", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"GM-BASIC2", name:"เรขาคณิต ป.6 เข้า ม.1 เรขาคณิต มุม เส้นขนาน", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"GM-BASIC3", name:"เรขาคณิต ป.6 เข้า ม.1 เรขาคณิต มุม สามเหลี่ยม สี่เหลี่ยม", total:10, passingScore:8, timeLimit:30*60 },
-  { id:"SPR-164", name:"Pre Test สายปัญญารังสิต ม.1 2564", total:20, passingScore:16, timeLimit:60*60 },
-  { id:"SPR-166", name:"Pre Test สายปัญญารังสิต ม.1 2566", total:20, passingScore:16, timeLimit:60*60 },
-  { id:"SKR-166", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566", total:40, passingScore:32, timeLimit:120*60 },
-  { id:"JP-165", name:"Pre Test จุฬาภรณ์ ม.1 2565", total:27, passingScore:36, timeLimit:90*60 },
-  { id:"TEDET-2567", name:"ข้อสอบแข่งขัน TEDET ป.6 2567", total:20, passingScore:16, timeLimit:80*60 },
-  { id:"SKR-166-??", name:"Pre Test สวนกุหลาบรังสิต ม.1 2566 สำหรับBB", total:20, passingScore:16, timeLimit:60*60 },
-  { id:"PW8-BASIC1", name:"สมบัติเลขยกกำลัง ม.2 สมบัติ 7+2 ข้อ", total:15, passingScore:12, timeLimit:45*60 },
-  { id:"PW8-BASIC3", name:"สมบัติเลขยกกำลัง ม.2 สมการ", total:15, passingScore:12, timeLimit:45*60 },
-  { id:"PW8-BASIC4", name:"สมบัติเลขยกกำลัง ม.2 แยกฐาน", total:10, passingScore:8, timeLimit:30*60 },
-];
+  // ✅ โหลดรายชื่อชุดข้อสอบจาก Google Sheets ทันทีที่เปิดเว็บ
+  useEffect(() => {
+    apiGet({ action: "getQuizSets" })
+      .then(data => {
+        if (data.sets && data.sets.length > 0) {
+          setQuizSets(data.sets);
+        }
+      })
+      .catch(() => {});
+  }, []);
+  
 const DEFAULT_THEME = {
   logoEmoji:"⚔", themeColor:"#d4af37", fontSize:"22px",
   bgColor:"#0d0803", bgImageUrl:"",
@@ -1393,6 +1375,7 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
 
 export default function App() {
   const [screen,setScreen]=useState("init");
+  const [quizSets, setQuizSets] = useState([]); // ✅ เพิ่ม State เก็บชุดข้อสอบจาก Sheets
   const [selectedSet,setSet]=useState(null);
   const [student,setStudent]=useState(null);
   const [questions,setQuestions]=useState([]);
@@ -1407,6 +1390,16 @@ export default function App() {
   const prefetchedQuestionsRef = useRef<any>(null);
   const isDirectLink=!!getSetFromUrl();
   const isChallenge=mode==="challenge";
+
+  useEffect(() => {
+    apiGet({ action: "getQuizSets" })
+      .then(data => {
+        if (data.sets && data.sets.length > 0) {
+          setQuizSets(data.sets);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(()=>{
     const setId=getSetFromUrl();
@@ -1525,17 +1518,21 @@ export default function App() {
       `}</style>
       <div style={{minHeight:"100vh",fontFamily:"'Sarabun',sans-serif",background:bg}}>
         <Particles color={tc}/>
-        {screen==="setSelect"&&(
-          <SetSelectScreen onSelect={s=>{
-            setSet(s);
-            apiGet({action:"getConfig",setId:s.id}).then(d=>{ 
-      if(d.config) {
-        setTheme(buildTheme(d.config)); 
-        setCachedConfig(d.config); 
-        } 
-        });
-        setScreen("login");
-        }} theme={theme}/>
+       {screen==="setSelect"&&(
+          <SetSelectScreen 
+            quizSets={quizSets} // 👈 ส่ง quizSets ที่ดึงจากชีทเข้าไป
+            onSelect={s=>{
+              setSet(s);
+              apiGet({action:"getConfig",setId:s.id}).then(d=>{ 
+                if(d.config) {
+                  setTheme(buildTheme(d.config)); 
+                  setCachedConfig(d.config); 
+                } 
+              });
+              setScreen("login");
+            }} 
+            theme={theme}
+          />
         )}
         {screen==="login"&&selectedSet&&(
   <LoginScreen 
