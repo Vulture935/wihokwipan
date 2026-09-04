@@ -1455,12 +1455,20 @@ export default function App() {
         }} theme={theme}/>
         )}
         {screen==="login"&&selectedSet&&(
-          <LoginScreen set={selectedSet} theme={theme} isDirectLink={isDirectLink}
-            isChallenge={isChallenge} challengeConfig={challengeConfig}
-            challengeLabel={challengeConfig?.challengeName}
-            onConfirm={st=>{ setStudent(st); setScreen("loading"); }}
-            onBack={()=>{ setSet(null); setScreen("setSelect"); }}/>
-        )}
+  <LoginScreen 
+    set={selectedSet} 
+    theme={theme} 
+    isDirectLink={isDirectLink}
+    isChallenge={isChallenge} 
+    challengeConfig={challengeConfig}
+    challengeLabel={challengeConfig?.challengeName}
+    cachedConfig={cachedConfig}
+    prefetchedQuestionsRef={prefetchedQuestionsRef}
+    apiGet={apiGet}
+    onConfirm={st=>{ setStudent(st); setScreen("loading"); }}
+    onBack={()=>{ setSet(null); setScreen("setSelect"); }}
+  />
+)}
         {screen==="loading"&&(
           loadError
             ?<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
