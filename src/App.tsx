@@ -509,6 +509,21 @@ function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrig
 }
 
 function TextInput({ value, onChange, tc, disabled=false }) {
+  // 1. เก็บค่าที่กำลังพิมพ์ไว้ใน Local state
+  const [localValue, setLocalValue] = useState(value || "");
+
+  // 2. ถ้าย้ายข้อ (value จากแม่เปลี่ยน) ให้รีเซ็ตช่องพิมพ์ตามข้อนั้น
+  useEffect(() => {
+    setLocalValue(value || "");
+  }, [value]);
+
+  // 3. ฟังก์ชันอัปเดตไปที่คอมโพเนนต์แม่เมื่อพิมพ์เสร็จ
+  const handleSave = () => {
+    if (!disabled && localValue !== value) {
+      onChange(localValue);
+    }
+  };
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
@@ -518,18 +533,28 @@ function TextInput({ value, onChange, tc, disabled=false }) {
         </span>
       </div>
       <div style={{position:"relative"}}>
-        <input type="text" inputMode="decimal" value={value}
-          onChange={e=>!disabled&&onChange(e.target.value)} disabled={disabled}
+        <input type="text" inputMode="decimal" value={localValue}
+          // อัปเดตแค่ตัวมันเอง หน้าจอหลักไม่ re-render
+          onChange={e => !disabled && setLocalValue(e.target.value)} 
+          // อัปเดตแม่เมื่อผู้ใช้คลิกไปที่อื่น (คลิกออก)
+          onBlur={handleSave} 
+          // อัปเดตแม่เมื่อผู้ใช้กด Enter ที่คีย์บอร์ด
+          onKeyDown={e => {
+            if (e.key === "Enter") handleSave();
+          }}
+          disabled={disabled}
           placeholder="พิมพ์คำตอบที่นี่ เช่น 7.5"
           style={{width:"100%",boxSizing:"border-box",
-            background:value?`${tc}11`:"rgba(255,255,255,.03)",
-            border:value?`2px solid ${tc}`:`1px solid ${tc}33`,
+            background:localValue?`${tc}11`:"rgba(255,255,255,.03)",
+            border:localValue?`2px solid ${tc}`:`1px solid ${tc}33`,
             borderRadius:"12px",padding:"18px 20px",color:"#f5e6c8",
             fontFamily:"'Sarabun',sans-serif",fontSize:"22px",outline:"none",
             textAlign:"center",letterSpacing:"2px",transition:"all .2s",
-            boxShadow:value?`0 0 20px ${tc}22`:"none",opacity:disabled?.7:1}}/>
-        {value&&!disabled&&(
-          <button onClick={()=>onChange("")} style={{position:"absolute",right:"12px",top:"50%",
+            boxShadow:localValue?`0 0 20px ${tc}22`:"none",opacity:disabled?.7:1}}/>
+        
+        {/* ปุ่มกากบาทลบข้อความ */}
+        {localValue&&!disabled&&(
+          <button onClick={() => { setLocalValue(""); onChange(""); }} style={{position:"absolute",right:"12px",top:"50%",
             transform:"translateY(-50%)",background:"none",border:"none",color:"#6b5a3e",
             fontSize:"18px",cursor:"pointer",padding:"4px",lineHeight:1}}>×</button>
         )}
