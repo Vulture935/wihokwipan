@@ -507,6 +507,23 @@ const McChoices = React.memo(function McChoices({ shuffled, selNow, onSelect, tc
   );
 });
 
+const NavButton = React.memo(function NavButton({ index, isActive, isAnswered, pts, questionType, tc, onPress }: any) {
+  const handlePress = () => onPress(index);
+
+  return (
+    <div onClick={handlePress} style={{
+      minWidth:"24px",height:"24px",borderRadius:"5px",cursor:"pointer",padding:"0 3px",
+      background:isActive?tc:isAnswered?tc+"55":"rgba(255,255,255,.06)",
+      border:isActive?`2px solid ${tc}`:`1px solid ${tc}33`,
+      display:"flex",alignItems:"center",justifyContent:"center",
+      fontSize:"9px",fontWeight:700,color:isActive?"#1a0e00":"#8b7355",
+      transition:"all .15s",gap:"1px"}}>
+      {questionType==="text"?"✏":index+1}
+      {pts>1&&<span style={{fontSize:"8px",color:isActive?"#1a0e00":tc}}>×{pts}</span>}
+    </div>
+  );
+});
+
 function TextInput({ value, onChange, tc, disabled=false }) {
   // 1. เก็บค่าที่กำลังพิมพ์ไว้ใน Local state
   const [localValue, setLocalValue] = useState(value || "");
@@ -736,6 +753,9 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   const handleSelectChoice = useCallback((si: number) => {
     setAnswers((a: any) => ({ ...a, [current]: si }));
   }, [current]);
+  const handleNavigate = useCallback((index: number) => {
+    setCurrent(index);
+  }, []);
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
@@ -755,21 +775,21 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
             />
           </div>
         </div>
-        <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
-          {questions.map((qs,i)=>{
+       <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
+          {questions.map((qs: any, i: number)=>{
             const isAnswered=answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
             const pts=qs.points??1;
             return (
-              <div key={i} onClick={()=>setCurrent(i)} style={{
-                minWidth:"24px",height:"24px",borderRadius:"5px",cursor:"pointer",padding:"0 3px",
-                background:i===current?tc:isAnswered?tc+"55":"rgba(255,255,255,.06)",
-                border:i===current?`2px solid ${tc}`:`1px solid ${tc}33`,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:"9px",fontWeight:700,color:i===current?"#1a0e00":"#8b7355",
-                transition:"all .15s",gap:"1px"}}>
-                {qs.questionType==="text"?"✏":i+1}
-                {pts>1&&<span style={{fontSize:"8px",color:i===current?"#1a0e00":tc}}>×{pts}</span>}
-              </div>
+              <NavButton
+                key={i}
+                index={i}
+                isActive={i===current}
+                isAnswered={isAnswered}
+                pts={pts}
+                questionType={qs.questionType}
+                tc={tc}
+                onPress={handleNavigate}
+              />
             );
           })}
         </div>
