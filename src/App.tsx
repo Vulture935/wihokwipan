@@ -268,9 +268,9 @@ function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
   return <div style={{fontSize:size+"px",textAlign:"center",lineHeight:1}}>{logoEmoji||"⚡"}</div>;
 }
 
-function SetSelectScreen({ onSelect, theme }) {
+function SetSelectScreen({ quizSets, onSelect, theme }: any) {
   const [search,setSearch]=useState("");
-  const filtered=QUIZ_SETS.filter(s=>s.name.includes(search)||s.id.includes(search));
+  const filtered = quizSets.filter((s: any) => s.name.includes(search) || s.id.includes(search));
   const tc=theme.themeColor;
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
@@ -288,23 +288,28 @@ function SetSelectScreen({ onSelect, theme }) {
           style={{width:"100%",boxSizing:"border-box",background:`${tc}11`,border:`1px solid ${tc}44`,
             borderRadius:"8px",padding:"10px 14px",color:"#f5e6c8",
             fontFamily:"'Sarabun',sans-serif",fontSize:"15px",outline:"none",marginBottom:"14px"}}/>
-        <div style={{display:"flex",flexDirection:"column",gap:"8px",maxHeight:"400px",overflowY:"auto"}}>
-          {filtered.map(set=>(
-            <button key={set.id} onClick={()=>onSelect(set)} style={{
-              background:`${tc}08`,border:`1px solid ${tc}33`,borderRadius:"10px",
-              padding:"13px 16px",cursor:"pointer",textAlign:"left",
-              display:"flex",justifyContent:"space-between",alignItems:"center",transition:"all .2s"}}>
-              <div>
-                <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",fontWeight:600}}>{set.name}</div>
-                <div style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>
-                  {set.id} · {set.total}ข้อ · {set.timeLimit/60}นาที · ผ่าน {set.passingScore} คะแนน
+        
+        {filtered.length === 0 ? (
+          <Spinner color={tc}/>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:"8px",maxHeight:"400px",overflowY:"auto"}}>
+            {filtered.map((set: any)=>(
+              <button key={set.id} onClick={()=>onSelect(set)} style={{
+                background:`${tc}08`,border:`1px solid ${tc}33`,borderRadius:"10px",
+                padding:"13px 16px",cursor:"pointer",textAlign:"left",
+                display:"flex",justifyContent:"space-between",alignItems:"center",transition:"all .2s"}}>
+                <div>
+                  <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",fontWeight:600}}>{set.name}</div>
+                  <div style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>
+                    {set.id} · {set.total}ข้อ · {set.timeLimit/60}นาที · ผ่าน {set.passingScore} คะแนน
+                  </div>
+                  <div style={{color:"#3a6a3a",fontSize:"11px",fontFamily:"'Courier New',monospace",marginTop:"3px"}}>?set={set.id}</div>
                 </div>
-                <div style={{color:"#3a6a3a",fontSize:"11px",fontFamily:"'Courier New',monospace",marginTop:"3px"}}>?set={set.id}</div>
-              </div>
-              <span style={{color:tc,fontSize:"22px"}}>›</span>
-            </button>
-          ))}
-        </div>
+                <span style={{color:tc,fontSize:"22px"}}>›</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
