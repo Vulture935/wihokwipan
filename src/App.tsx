@@ -347,17 +347,33 @@ function LoginScreen({ set, onConfirm, onBack, isDirectLink, theme, isChallenge,
       isCancelled = true;
     };
   }, []);
-  const tc=theme.themeColor;
-  const lookup=async()=>{
-    if(!sid.trim()) return;
-    setLoading(true); setError(""); setStudent(null);
-    try {
-      const data=await apiGet({ action:"getStudent", studentId:sid.trim() });
-      if(data.error) setError(data.error);
-      else setStudent(data.student);
-    } catch { setError("เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่"); }
-    setLoading(false);
-  };
+const tc=theme.themeColor;
+const lookup=async()=>{
+  if(!sid.trim()) return;
+  setLoading(true); setError(""); setStudent(null);
+  try {
+    const data=await apiGet({ action:"getStudent", studentId:sid.trim() });
+    if(data.error) {
+      setError(data.error);
+    } else {
+      setStudent(data.student);
+      // ✅ เริ่ม prefetch ข้อสอบทันทีที่เจอนักเรียน (ไม่รอให้กด "ใช่คือฉัน")
+      if (!isChallenge && selectedSet?.id) {
+        Promise.all([
+          apiGet({ action: "getQuestions", setName: selectedSet.id }),
+          cachedConfig
+            ? Promise.resolve({ config: cachedConfig })
+            : apiGet({ action: "getConfig", setId: selectedSet.id }),
+        ]).then(results => {
+          prefetchedQuestionsRef.current = results;
+        }).catch(() => {});
+      }
+    }
+  } catch { 
+    setError("เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่"); 
+  }
+  setLoading(false);
+};
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
       <div style={{maxWidth:"460px",width:"100%",
@@ -1297,6 +1313,7 @@ export default function App() {
   const [challengePool,setChallengePool]=useState([]);
   const [challengeResult,setChallengeResult]=useState(null);
   const [cachedConfig, setCachedConfig] = useState(null);
+  const prefetchedQuestionsRef = useRef<any>(null);
   const isDirectLink=!!getSetFromUrl();
   const isChallenge=mode==="challenge";
 
@@ -1320,45 +1337,65 @@ export default function App() {
     } else setScreen("setSelect");
   },[]);
 
-  useEffect(()=>{
-    if(screen!=="loading"||!selectedSet||!student||isChallenge) return;
+ // ── 1) โหลดข้อสอบโหมดปกติ (รองรับ Prefetch) ──────────────────
+  useEffect(() => {
+    if (screen !== "loading" || !selectedSet || !student || isChallenge) return;
     setLoadError("");
-    // 👇 ปรับแก้ไข Promise.all ตรงนี้
-  Promise.all([
-    apiGet({action:"getQuestions",setName:selectedSet.id}),
-    cachedConfig 
-      ? Promise.resolve({config:cachedConfig}) 
-      : apiGet({action:"getConfig",setId:selectedSet.id}),
-  ]).then(([qData,cfgData])=>{
-    if(!qData.questions?.length){ setLoadError("ไม่พบข้อสอบในชุด "+selectedSet.id); return; }
-    const shouldShuffle=cfgData.config?.shuffleQuestions!==false;
-    setQuestions(shouldShuffle
-      ?selectQuestions(qData.questions,selectedSet.total)
-      :orderQuestions(qData.questions,selectedSet.total));
-    setTheme(buildTheme(cfgData.config));
-    setScreen("quiz");
-  }).catch(()=>setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
-},[screen, cachedConfig]); // 👈 เพิ่ม cachedConfig ใน dependency array
+    const run = async () => {
+      try {
+        // ✅ ถ้า prefetch เสร็จแล้ว ใช้เลย ไม่ต้อง fetch ใหม่
+        const cached = prefetchedQuestionsRef.current;
+        const [qData, cfgData] = cached
+          ? cached
+          : await Promise.all([
+              apiGet({ action: "getQuestions", setName: selectedSet.id }),
+              cachedConfig
+                ? Promise.resolve({ config: cachedConfig })
+                : apiGet({ action: "getConfig", setId: selectedSet.id }),
+            ]);
+        
+        prefetchedQuestionsRef.current = null; // ล้าง cache หลังนำไปใช้แล้ว
 
-  useEffect(()=>{
-    if(screen!=="loading"||!selectedSet||!student||!isChallenge) return;
+        if (!qData.questions?.length) {
+          setLoadError("ไม่พบข้อสอบในชุด " + selectedSet.id);
+          return;
+        }
+
+        const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
+        setQuestions(
+          shouldShuffle
+            ? selectQuestions(qData.questions, selectedSet.total)
+            : orderQuestions(qData.questions, selectedSet.total)
+        );
+        setTheme(buildTheme(cfgData.config));
+        setScreen("quiz");
+      } catch {
+        setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+      }
+    };
+    run();
+  }, [screen, cachedConfig]);
+
+  // ── 2) โหลดข้อสอบโหมด Challenge (คงเดิม) ──────────────────
+  useEffect(() => {
+    if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
     setLoadError("");
-    const setId=selectedSet.id;
-    apiGet({action:"getChallengeConfig",setId}).then(async cfgData=>{
-      const cc=cfgData.challengeConfig;
-      if(!cc){ setLoadError("ไม่พบ Challenge Config สำหรับ "+setId); return; }
+    const setId = selectedSet.id;
+    apiGet({ action: "getChallengeConfig", setId }).then(async cfgData => {
+      const cc = cfgData.challengeConfig;
+      if (!cc) { setLoadError("ไม่พบ Challenge Config สำหรับ " + setId); return; }
       setChallengeConfig(cc);
-      const setIds=cc.challengeSets||[];
-      const allQ=await Promise.all(
-        setIds.map(sid=>apiGet({action:"getQuestions",setName:sid}).then(d=>d.questions||[]))
+      const setIds = cc.challengeSets || [];
+      const allQ = await Promise.all(
+        setIds.map(sid => apiGet({ action: "getQuestions", setName: sid }).then(d => d.questions || []))
       );
-      const pool=shuffle(allQ.flat());
-      if(!pool.length){ setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
+      const pool = shuffle(allQ.flat());
+      if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
       setChallengePool(pool);
       setScreen("challenge");
-    }).catch(()=>setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
-  },[screen]);
-
+    }).catch(() => setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
+  }, [screen]);
+  
   const goHome=()=>{
   setResult(null); setQuestions([]);
   setChallengeResult(null); setChallengePool([]);
