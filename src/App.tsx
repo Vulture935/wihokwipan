@@ -80,7 +80,6 @@ const QUIZ_SETS = [
   { id:"PW8-BASIC3", name:"สมบัติเลขยกกำลัง ม.2 สมการ", total:15, passingScore:12, timeLimit:45*60 },
   { id:"PW8-BASIC4", name:"สมบัติเลขยกกำลัง ม.2 แยกฐาน", total:10, passingScore:8, timeLimit:30*60 },
 ];
-
 const DEFAULT_THEME = {
   logoEmoji:"⚔", themeColor:"#d4af37", fontSize:"22px",
   bgColor:"#0d0803", bgImageUrl:"",
