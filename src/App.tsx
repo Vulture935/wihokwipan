@@ -1375,7 +1375,7 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
 
 export default function App() {
   const [screen,setScreen]=useState("init");
-  const [quizSets, setQuizSets] = useState([]); // ✅ เพิ่ม State เก็บชุดข้อสอบจาก Sheets
+  const [quizSets, setQuizSets] = useState([]); 
   const [selectedSet,setSet]=useState(null);
   const [student,setStudent]=useState(null);
   const [questions,setQuestions]=useState([]);
@@ -1391,7 +1391,7 @@ export default function App() {
   const isDirectLink=!!getSetFromUrl();
   const isChallenge=mode==="challenge";
 
-  useEffect(() => {
+useEffect(() => {
     apiGet({ action: "getQuizSets" })
       .then(data => {
         if (data.sets && data.sets.length > 0) {
@@ -1400,27 +1400,33 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
-
-  useEffect(()=>{
+  
+useEffect(()=>{
     const setId=getSetFromUrl();
     if(setId){
-    apiGet({action:"getConfig",setId}).then(d=>{ 
-      if(d.config) {
-        setTheme(buildTheme(d.config)); 
-        setCachedConfig(d.config); 
-      } 
-    });
+      apiGet({action:"getConfig",setId}).then(d=>{ 
+        if(d.config) {
+          setTheme(buildTheme(d.config)); 
+          setCachedConfig(d.config); 
+        } 
+      });
       const pseudoSet={ id:setId, name:setId, total:0, passingScore:0, timeLimit:0 };
       if(isChallenge){
         setSet(pseudoSet); setScreen("login");
       } else {
-        const found=QUIZ_SETS.find(s=>s.id===setId);
-        if(found){ setSet(found); setScreen("login"); }
-        else setScreen("setSelect");
+        apiGet({ action: "getQuizSets" }).then(res => {
+          const sets = res.sets || [];
+          const found = sets.find((s: any) => s.id === setId);
+          if(found){ 
+            setSet(found); 
+            setScreen("login"); 
+          } else {
+            setScreen("setSelect");
+          }
+        }).catch(() => setScreen("setSelect"));
       }
     } else setScreen("setSelect");
   },[]);
-
  // ── 1) โหลดข้อสอบโหมดปกติ (รองรับ Prefetch) ──────────────────
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || isChallenge) return;
