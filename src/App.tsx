@@ -366,9 +366,9 @@ const lookup=async()=>{
     } else {
       setStudent(data.student);
       // ✅ เริ่ม prefetch ข้อสอบทันทีที่เจอนักเรียน (ไม่รอให้กด "ใช่คือฉัน")
-      if (!isChallenge && selectedSet?.id) {
+     if (!isChallenge && set?.id) {
         Promise.all([
-          apiGet({ action: "getQuestions", setName: selectedSet.id }),
+          apiGet({ action: "getQuestions", setName: set.id }),
           cachedConfig
             ? Promise.resolve({ config: cachedConfig })
             : apiGet({ action: "getConfig", setId: selectedSet.id }),
@@ -1356,7 +1356,7 @@ export default function App() {
         const [qData, cfgData] = cached
           ? cached
           : await Promise.all([
-              apiGet({ action: "getQuestions", setName: selectedSet.id }),
+              apiGet({ action: "getQuestions", setName: set.id }),
               cachedConfig
                 ? Promise.resolve({ config: cachedConfig })
                 : apiGet({ action: "getConfig", setId: selectedSet.id }),
