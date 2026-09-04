@@ -733,6 +733,9 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   const shuffled=allShuffled[current];
   const selNow=answers[current]??(q.questionType==="text"?"":null);
   const answered=Object.keys(answers).filter(k=>answers[k]!==null&&answers[k]!=="").length;
+  const handleSelectChoice = useCallback((si: number) => {
+    setAnswers((a: any) => ({ ...a, [current]: si }));
+  }, [current]);
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
@@ -789,7 +792,12 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
             <TextInput value={selNow||""} onChange={val=>setAnswers(a=>({...a,[current]:val}))} tc={tc}/>
           </div>
         ):(
-          <McChoices shuffled={shuffled} selNow={selNow} onSelect={si=>setAnswers(a=>({...a,[current]:si}))} tc={tc}/>
+          <McChoices 
+            shuffled={shuffled} 
+            selNow={selNow} 
+            onSelect={handleSelectChoice} 
+            tc={tc}
+          />
         )}
       </div>
 
