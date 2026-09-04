@@ -51,17 +51,6 @@ const APPS_SCRIPT_URL =
 const LOOKER_STUDIO_URL =
   "https://datastudio.google.com/reporting/c1d52161-5387-4f00-bcda-b70b54116fc5/page/p_h1rlukz72d";
 
-  // ✅ โหลดรายชื่อชุดข้อสอบจาก Google Sheets ทันทีที่เปิดเว็บ
-  useEffect(() => {
-    apiGet({ action: "getQuizSets" })
-      .then(data => {
-        if (data.sets && data.sets.length > 0) {
-          setQuizSets(data.sets);
-        }
-      })
-      .catch(() => {});
-  }, []);
-  
 const DEFAULT_THEME = {
   logoEmoji:"⚔", themeColor:"#d4af37", fontSize:"22px",
   bgColor:"#0d0803", bgImageUrl:"",
