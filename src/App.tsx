@@ -329,13 +329,18 @@ function SetSelectScreen({ onSelect, theme }) {
 }
 
 function LoginScreen({ 
-  onLogin, 
   theme, 
+  set,
   selectedSet, 
   isChallenge, 
+  isDirectLink,
+  challengeConfig,
+  challengeLabel,
   cachedConfig, 
   prefetchedQuestionsRef, 
-  apiGet 
+  apiGet,
+  onConfirm,
+  onBack
 }: any) {
   const [sid,setSid]=useState("");
   const [student,setStudent]=useState(null);
