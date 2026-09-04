@@ -640,9 +640,38 @@ function AnswerRow({ r, i, tc }) {
   );
 }
 
+const TimerDisplay = React.memo(({ initialTime, tc, onTimeUp }: any) => {
+  const [timeLeft, setTimeLeft] = useState(initialTime);
+
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      setTimeLeft((prev: number) => {
+        if (prev <= 1) {
+          clearInterval(timerId);
+          onTimeUp();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerId);
+  }, [onTimeUp]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", width: "100%" }}>
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:"22px",fontWeight:700,
+        color:timeLeft<60?"#e74c3c":timeLeft<180?"#e67e22":tc,
+        textShadow:timeLeft<60?"0 0 10px rgba(231,76,60,.7)":"none", marginBottom:"6px"}}>
+        ⏱ {formatTime(timeLeft)}
+      </span>
+      <TimerBar timeLeft={timeLeft} totalTime={initialTime} color={tc} />
+    </div>
+  );
+});
+// =======================================================
+
 function QuizScreen({ set, student, questions, onFinish, theme }) {
-  const [current,setCurrent]=useState(0);
-  const [answers,setAnswers]=useState({});
+const startTimeRef = useRef(Date.now());
   const [timeLeft,setTimeLeft]=useState(set.timeLimit);
   const timerRef=useRef(null);
   const tc=theme.themeColor;
@@ -651,8 +680,8 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
     questions.map(q=>q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))))
   );
   const finish=useCallback((timeUp=false)=>{
-    clearInterval(timerRef.current);
-    const timeUsed=set.timeLimit-timeLeft;
+let timeUsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+    if (timeUsed > set.timeLimit) timeUsed = set.timeLimit;
     const results=questions.map((q,qi)=>{
       const shuffled=allShuffled[qi], ans=answers[qi]??null;
       if(q.questionType==="text"){
@@ -693,13 +722,17 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
             {student.nickname} · ข้อ <b style={{color:tc}}>{current+1}</b>/{questions.length}
             <span style={{color:tc,marginLeft:"8px",fontSize:"11px"}}>({answered}/{questions.length} ข้อ)</span>
           </span>
-          <span style={{fontFamily:"'Courier New',monospace",fontSize:"22px",fontWeight:700,
-            color:timeLeft<60?"#e74c3c":timeLeft<180?"#e67e22":tc,
-            textShadow:timeLeft<60?"0 0 10px rgba(231,76,60,.7)":"none"}}>
-            ⏱ {formatTime(timeLeft)}
-          </span>
+      {/* ========== ใส่ TimerDisplay แทนของเดิม ========== */}
+        <div style={{ width: "150px" }}>
+          <TimerDisplay 
+            initialTime={set.timeLimit} 
+            tc={tc} 
+            onTimeUp={() => finish(true)} 
+          />
         </div>
-        <TimerBar timeLeft={timeLeft} totalTime={set.timeLimit} color={tc}/>
+        {/* ============================================== */}
+      </div>
+      {/* สังเกตว่าเราลบ <TimerBar ... /> บรรทัดนี้ทิ้งไปแล้ว เพราะมันไปรวมอยู่ใน TimerDisplay แทนครับ */}
         <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
           {questions.map((qs,i)=>{
             const isAnswered=answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
