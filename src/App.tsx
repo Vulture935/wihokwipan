@@ -466,10 +466,10 @@ const lookup=async()=>{
 }
 
 // ── MC Choices — รองรับ Markdown ในตัวเลือก ──────────────
-function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrigIndex=null, showAnswer=false }) {
+const McChoices = React.memo(function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrigIndex=null, showAnswer=false }: any) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"9px"}}>
-      {shuffled.map((choice,si)=>{
+      {shuffled.map((choice: any, si: number)=>{
         const sel=selNow===si;
         const isCorrectChoice=showAnswer&&choice.origIndex===correctOrigIndex;
         const isWrongSelected=showAnswer&&sel&&!isCorrectChoice;
@@ -497,7 +497,6 @@ function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrig
               color:showAnswer?(isCorrectChoice?"#27ae60":isWrongSelected?"#e74c3c":"#4a3a20"):(sel?"#1a0e00":"#8b7355")}}>
               {["ก","ข","ค","ง"][si]}
             </span>
-            {/* ✅ ตัวเลือกรองรับ Markdown */}
             <span style={{flex:1}}><MdText>{choice.text}</MdText></span>
             {showAnswer&&isCorrectChoice&&<span style={{fontSize:"14px"}}>✓</span>}
             {showAnswer&&isWrongSelected&&<span style={{fontSize:"14px"}}>✗</span>}
@@ -506,7 +505,7 @@ function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrig
       })}
     </div>
   );
-}
+});
 
 function TextInput({ value, onChange, tc, disabled=false }) {
   // 1. เก็บค่าที่กำลังพิมพ์ไว้ใน Local state
