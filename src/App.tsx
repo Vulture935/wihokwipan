@@ -640,19 +640,53 @@ function AnswerRow({ r, i, tc }) {
   );
 }
 
+const TimerDisplay = React.memo(({ initialTime, tc, onTimeUp }: any) => {
+  const [timeLeft, setTimeLeft] = useState(initialTime);
+
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      setTimeLeft((prev: number) => {
+        if (prev <= 1) {
+          clearInterval(timerId);
+          onTimeUp();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerId);
+  }, [onTimeUp]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", width: "100%" }}>
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:"22px",fontWeight:700,
+        color:timeLeft<60?"#e74c3c":timeLeft<180?"#e67e22":tc,
+        textShadow:timeLeft<60?"0 0 10px rgba(231,76,60,.7)":"none", marginBottom:"6px"}}>
+        ⏱ {formatTime(timeLeft)}
+      </span>
+      <TimerBar timeLeft={timeLeft} totalTime={initialTime} color={tc} />
+    </div>
+  );
+});
+
 function QuizScreen({ set, student, questions, onFinish, theme }) {
   const [current,setCurrent]=useState(0);
   const [answers,setAnswers]=useState({});
-  const [timeLeft,setTimeLeft]=useState(set.timeLimit);
-  const timerRef=useRef(null);
+  
+  // ใช้ useRef จับเวลาแทนวิธีเก่า
+  const startTimeRef = useRef(Date.now());
   const tc=theme.themeColor;
   const maxScore=calcMaxScore(questions);
+  
   const [allShuffled]=useState(()=>
     questions.map(q=>q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))))
   );
+
   const finish=useCallback((timeUp=false)=>{
-    clearInterval(timerRef.current);
-    const timeUsed=set.timeLimit-timeLeft;
+    // คำนวณเวลาที่ใช้จริงจาก Date.now()
+    let timeUsed=Math.floor((Date.now()-startTimeRef.current)/1000);
+    if(timeUsed>set.timeLimit) timeUsed=set.timeLimit;
+
     const results=questions.map((q,qi)=>{
       const shuffled=allShuffled[qi], ans=answers[qi]??null;
       if(q.questionType==="text"){
@@ -664,14 +698,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
       }
     });
     onFinish({results,timeUsed,timeUp,student,set,maxScore});
-  },[answers,timeLeft]);
-
-  useEffect(()=>{
-    timerRef.current=setInterval(()=>{
-      setTimeLeft(t=>{ if(t<=1){clearInterval(timerRef.current);finish(true);return 0;} return t-1; });
-    },1000);
-    return()=>clearInterval(timerRef.current);
-  },[finish]);
+  },[answers, questions, set, student, maxScore, allShuffled]);
 
   useEffect(()=>{
     if(questions[current]?.questionType==="text")
@@ -688,18 +715,19 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
       padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
       <div style={{background:"rgba(15,8,2,.92)",border:`1px solid ${tc}44`,
         borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-          <span style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:"6px"}}>
+          <span style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginBottom:"10px"}}>
             {student.nickname} · ข้อ <b style={{color:tc}}>{current+1}</b>/{questions.length}
             <span style={{color:tc,marginLeft:"8px",fontSize:"11px"}}>({answered}/{questions.length} ข้อ)</span>
           </span>
-          <span style={{fontFamily:"'Courier New',monospace",fontSize:"22px",fontWeight:700,
-            color:timeLeft<60?"#e74c3c":timeLeft<180?"#e67e22":tc,
-            textShadow:timeLeft<60?"0 0 10px rgba(231,76,60,.7)":"none"}}>
-            ⏱ {formatTime(timeLeft)}
-          </span>
+          <div style={{ width: "150px" }}>
+            <TimerDisplay 
+              initialTime={set.timeLimit} 
+              tc={tc} 
+              onTimeUp={() => finish(true)} 
+            />
+          </div>
         </div>
-        <TimerBar timeLeft={timeLeft} totalTime={set.timeLimit} color={tc}/>
         <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
           {questions.map((qs,i)=>{
             const isAnswered=answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
@@ -731,7 +759,6 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
               fontFamily:"'Cinzel',serif",boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
           )}
         </div>
-        {/* ✅ ใช้ QuestionBox ที่รองรับ Markdown */}
         <QuestionBox q={q} current={current} tc={tc}/>
         {q.questionType==="text"?(
           <div onKeyDown={e=>e.key==="Enter"&&current<questions.length-1&&setCurrent(c=>c+1)}>
