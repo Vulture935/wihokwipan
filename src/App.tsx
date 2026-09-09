@@ -1322,14 +1322,18 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
 
         {/* Boss player stats row */}
         {isBoss && playerStats && (
-          <div style={{display:"flex",gap:"10px",marginBottom:"6px"}}>
-            {([["⚔️", playerStats.effective.atk], ["🛡️", playerStats.effective.def],
-               ["⚡", playerStats.effective.spd]] as any[]).map(([icon, val]: any) => (
-              <span key={icon} style={{color:"#8b7355",fontSize:"11px",fontFamily:"'Cinzel',serif"}}>
-                {icon} {val}
-              </span>
+          <div style={{display:"flex",gap:"16px",marginBottom:"8px",
+            padding:"8px 12px",background:"rgba(212,175,55,.06)",
+            borderRadius:"8px",border:"1px solid rgba(212,175,55,.15)"}}>
+            {([["⚔️ ATK", playerStats.effective.atk],
+               ["🛡️ DEF", playerStats.effective.def],
+               ["⚡ SPD", playerStats.effective.spd]] as any[]).map(([icon, val]: any) => (
+              <div key={icon} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                <span style={{color:"#c0a878",fontSize:"13px",fontFamily:"'Cinzel',serif"}}>{icon}</span>
+                <span style={{color:"#f5e6c8",fontSize:"16px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{val}</span>
+              </div>
             ))}
-            <span style={{marginLeft:"auto",color:tc,fontSize:"11px",fontFamily:"'Cinzel',serif"}}>
+            <span style={{marginLeft:"auto",color:tc,fontSize:"14px",fontFamily:"'Cinzel',serif",fontWeight:700}}>
               {score} คะแนน
               {streak >= 3 && <span style={{color:"#f39c12",marginLeft:"6px"}}>🔥×{streak}</span>}
             </span>
@@ -1553,14 +1557,14 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
           </div>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px"}}>
           {[["✓ ถูก",`${correctCount} ข้อ`,"#27ae60"],["★ คะแนน",`${score}`,tc],
-            ["🔥 Streak",`${bestStreak} ข้อ`,"#f39c12"],["❤️ ชีวิตเหลือ",`${lives}/${livesMax}`,lives>0?"#27ae60":"#6b5a3e"]
+            ["🔥 Streak",`${bestStreak} ข้อ`,"#f39c12"],["❤️ ชีวิตเหลือ",`${lives}/${livesMax}`,lives>0?"#27ae60":"#e74c3c"]
           ].map(([k,v,c]: any)=>(
-            <div key={k} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(212,175,55,.12)",
-              borderRadius:"10px",padding:"12px",textAlign:"center"}}>
-              <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
-              <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
+            <div key={k} style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(212,175,55,.2)",
+              borderRadius:"12px",padding:"14px",textAlign:"center"}}>
+              <div style={{color:"#c0a878",fontSize:"13px",fontFamily:"'Cinzel',serif",marginBottom:"6px"}}>{k}</div>
+              <div style={{color:c,fontSize:"24px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
             </div>
           ))}
         </div>
