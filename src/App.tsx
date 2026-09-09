@@ -376,13 +376,27 @@ const lookup=async()=>{
         )}
         <div style={{textAlign:"center",marginBottom:"24px"}}>
           <div style={{marginBottom:"10px"}}>
-            {isChallenge
-              ? <ChallengeLogo
-                  logoImageUrl={challengeConfig?.logoImageUrl || theme.logoImageUrl || ""}
+            {isChallenge ? (
+              // ถ้า theme มี logoImageUrl (รูป Boss) → แสดงรูปใหญ่
+              theme.logoImageUrl ? (
+                <div style={{margin:"0 auto",width:"180px",height:"180px",
+                  borderRadius:"16px",overflow:"hidden",
+                  border:"2px solid rgba(231,76,60,.5)",
+                  boxShadow:"0 0 30px rgba(231,76,60,.4)",
+                  background:"rgba(0,0,0,0.3)"}}>
+                  <img src={theme.logoImageUrl} alt="boss"
+                    style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+                    onError={(e: any) => e.currentTarget.style.display = "none"}/>
+                </div>
+              ) : (
+                <ChallengeLogo
+                  logoImageUrl={challengeConfig?.logoImageUrl || ""}
                   logoEmoji={challengeConfig?.logoEmoji || theme.logoEmoji || "⚡"}
                   size={52}/>
-              : <div style={{fontSize:"44px",lineHeight:1}}>{theme.logoEmoji}</div>
-            }
+              )
+            ) : (
+              <div style={{fontSize:"44px",lineHeight:1}}>{theme.logoEmoji}</div>
+            )}
           </div>
           <h1 style={{fontFamily:"'Cinzel Decorative',serif",
             color:isChallenge?"#e74c3c":tc,fontSize:theme.fontSize,
@@ -1271,25 +1285,28 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
       {isBoss && boss && (
         <div style={{background:"rgba(12,4,4,.94)",border:"1px solid rgba(231,76,60,.4)",
           borderRadius:"12px",padding:"10px 14px",marginBottom:"8px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
-              {boss.gifUrl && (
-                <img src={boss.gifUrl} alt="" style={{width:"48px",height:"48px",objectFit:"contain",
-                  filter:"drop-shadow(0 0 8px rgba(231,76,60,0.5))"}}
-                  onError={(e: any) => e.currentTarget.style.display = "none"} />
-              )}
-              <span style={{fontFamily:"'Cinzel Decorative',serif",color:"#e74c3c",fontSize:"16px",
-                textShadow:"0 0 12px rgba(231,76,60,0.4)"}}>
-                {boss.name}
-              </span>
+          {/* รูป Boss ใหญ่ */}
+          {boss.gifUrl && (
+            <div style={{textAlign:"center",marginBottom:"10px"}}>
+              <img src={boss.gifUrl} alt={boss.name}
+                style={{width:"100%",maxHeight:"432px",objectFit:"contain",
+                  filter:"drop-shadow(0 0 16px rgba(231,76,60,0.6))",
+                  borderRadius:"12px"}}
+                onError={(e: any) => e.currentTarget.style.display = "none"}/>
             </div>
+          )}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+            <span style={{fontFamily:"'Cinzel Decorative',serif",color:"#e74c3c",fontSize:"16px",
+              textShadow:"0 0 12px rgba(231,76,60,0.4)"}}>
+              {boss.name}
+            </span>
             <span style={{color:"#f5c6c6",fontSize:"13px",fontFamily:"'Cinzel',serif",fontWeight:600,
               background:"rgba(231,76,60,0.15)",border:"1px solid rgba(231,76,60,0.3)",
               padding:"4px 10px",borderRadius:"20px"}}>
               🛡️ DEF {boss.def} · ตี &gt; {boss.def}
             </span>
           </div>
-          <HPBar current={bossHp} max={boss.hpMax} color="auto" height={12} showNumbers={true} />
+          <HPBar current={bossHp} max={boss.hpMax} color="auto" height={12} showNumbers={true}/>
         </div>
       )}
 
