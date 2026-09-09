@@ -1770,7 +1770,7 @@ useEffect(()=>{
       if (cc.bossName) {
         try {
           const [bossRes, statsRes] = await Promise.all([
-            apiGet({ action: "getActiveBoss" }),
+            apiGet({ action: "getActiveBoss", bossName: cc.bossName }),
             apiGet({ action: "getPlayerStats", studentId: student.id }),
           ]);
           setActiveBoss(bossRes.boss || null);
