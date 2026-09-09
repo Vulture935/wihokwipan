@@ -1114,11 +1114,16 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
   useEffect(()=>{ loadNext(0, maxLives, []); },[]);
 
   // ── helper: คำนวณ damage รวม session แล้วส่งครั้งเดียว ──
-  function saveFinalBossDamage(finalHistory: any[]) {
-    if (!isBoss || !boss) return;
-    const correctCount = finalHistory.filter(h => h.isCorrect).length;
-    const atk          = playerStats?.effective?.atk ?? 1;
-    const totalDmg     = correctCount + atk; // ← สูตร: ข้อถูก + ATK
+function saveFinalBossDamage(finalHistory: any[]) {
+  console.log("saveFinalBossDamage called", { isBoss, boss, playerStats });
+  if (!isBoss || !boss) {
+    console.log("skipped: isBoss=", isBoss, "boss=", boss);
+    return;
+  }
+  const correctCount = finalHistory.filter(h => h.isCorrect).length;
+  const atk          = playerStats?.effective?.atk ?? 1;
+  const totalDmg     = correctCount + atk;
+  console.log("damage:", totalDmg, "def:", boss.def, "pen:", totalDmg > boss.def);
     const pen          = totalDmg > (boss.def ?? 0);
     if (!pen) return; // ตีไม่เข้าเกราะ ไม่บันทึก
 
