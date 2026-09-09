@@ -32,7 +32,6 @@ const MdText = React.memo(function MdText({
   );
 });
 
-
 // โจทย์ข้อความ (ใช้ MdText)
 function QuestionText({ text }) {
   if (!text) return null;
@@ -1115,16 +1114,11 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
   useEffect(()=>{ loadNext(0, maxLives, []); },[]);
 
   // ── helper: คำนวณ damage รวม session แล้วส่งครั้งเดียว ──
-function saveFinalBossDamage(finalHistory: any[]) {
-  console.log("saveFinalBossDamage called", { isBoss, boss, playerStats });
-  if (!isBoss || !boss) {
-    console.log("skipped: isBoss=", isBoss, "boss=", boss);
-    return;
-  }
-  const correctCount = finalHistory.filter(h => h.isCorrect).length;
-  const atk          = playerStats?.effective?.atk ?? 1;
-  const totalDmg     = correctCount + atk;
-  console.log("damage:", totalDmg, "def:", boss.def, "pen:", totalDmg > boss.def);
+  function saveFinalBossDamage(finalHistory: any[]) {
+    if (!isBoss || !boss) return;
+    const correctCount = finalHistory.filter(h => h.isCorrect).length;
+    const atk          = playerStats?.effective?.atk ?? 1;
+    const totalDmg     = correctCount + atk; // ← สูตร: ข้อถูก + ATK
     const pen          = totalDmg > (boss.def ?? 0);
     if (!pen) return; // ตีไม่เข้าเกราะ ไม่บันทึก
 
@@ -1274,21 +1268,25 @@ function saveFinalBossDamage(finalHistory: any[]) {
       {isBoss && boss && (
         <div style={{background:"rgba(12,4,4,.94)",border:"1px solid rgba(231,76,60,.4)",
           borderRadius:"12px",padding:"10px 14px",marginBottom:"8px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
               {boss.gifUrl && (
-                <img src={boss.gifUrl} alt="" style={{width:"28px",height:"28px",objectFit:"contain"}}
+                <img src={boss.gifUrl} alt="" style={{width:"48px",height:"48px",objectFit:"contain",
+                  filter:"drop-shadow(0 0 8px rgba(231,76,60,0.5))"}}
                   onError={(e: any) => e.currentTarget.style.display = "none"} />
               )}
-              <span style={{fontFamily:"'Cinzel Decorative',serif",color:"#e74c3c",fontSize:"13px"}}>
+              <span style={{fontFamily:"'Cinzel Decorative',serif",color:"#e74c3c",fontSize:"16px",
+                textShadow:"0 0 12px rgba(231,76,60,0.4)"}}>
                 {boss.name}
               </span>
             </div>
-            <span style={{color:"#8b5555",fontSize:"11px",fontFamily:"'Cinzel',serif"}}>
-              🛡️ DEF {boss.def} · ต้องตี &gt; {boss.def}
+            <span style={{color:"#f5c6c6",fontSize:"13px",fontFamily:"'Cinzel',serif",fontWeight:600,
+              background:"rgba(231,76,60,0.15)",border:"1px solid rgba(231,76,60,0.3)",
+              padding:"4px 10px",borderRadius:"20px"}}>
+              🛡️ DEF {boss.def} · ตี &gt; {boss.def}
             </span>
           </div>
-          <HPBar current={bossHp} max={boss.hpMax} color="auto" height={10} showNumbers={true} />
+          <HPBar current={bossHp} max={boss.hpMax} color="auto" height={12} showNumbers={true} />
         </div>
       )}
 
