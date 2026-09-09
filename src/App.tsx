@@ -32,6 +32,7 @@ const MdText = React.memo(function MdText({
   );
 });
 
+
 // โจทย์ข้อความ (ใช้ MdText)
 function QuestionText({ text }) {
   if (!text) return null;
