@@ -1479,11 +1479,7 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
   history.forEach(h=>{ if(h.isCorrect){cur++;bestStreak=Math.max(bestStreak,cur);}else cur=0; });
 
   // ── Boss damage summary ──────────────────────────────────
-  const totalDmg   = data.totalBossDmg ?? 0;
-  const correctCount = history.filter(h=>h.isCorrect).length;
-  const atk        = 1; // แสดง info เฉยๆ ไม่ต้องคำนวณใหม่
-  const penetCount = totalDmg > 0 ? 1 : 0; // ส่งครั้งเดียว = 1 hit หรือ 0
-  const maxHit     = totalDmg; // = damage รวมทั้ง session
+  const totalDmg = data.totalBossDmg ?? 0;
   const [showDetail,setShowDetail]=useState(false);
   const [saving,setSaving]=useState(true);
   const [saveErr,setSaveErr]=useState(false);
