@@ -1148,10 +1148,21 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
     }
 
     const pts = isCorrect ? (current.points ?? 1) : 0;
+
+    // คำนวณ damage ล่วงหน้าเพื่อเก็บใน history
+    let dmgDealt = 0;
+    if (isBoss && isCorrect) {
+      const atk = playerStats?.effective?.atk ?? 1;
+      const dmg = pts + atk;
+      const pen = dmg > (boss.def ?? 0);
+      if (pen) dmgDealt = dmg;
+    }
+
     const newEntry = {
       question: current, isCorrect, selectedOrigIndex,
       userTextAnswer: textVal, shuffledChoices: [...shuffledChoices],
       questionNumber: questionNum + 1,
+      dmgDealt, // ← เก็บ damage ที่ทำได้ต่อข้อ
     };
     const newHistory = [...historyRef.current, newEntry];
     historyRef.current = newHistory;
@@ -1452,14 +1463,22 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
 }
 
 function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
-  const { history, score, lives, livesMax, reason, student, challengeConfig } = data;
+  const { history, score, lives, livesMax, reason, student, challengeConfig,
+          bossHpFinal, bossDefeated } = data;
   const tc = theme.themeColor;
-  const isComplete = reason === "complete";
+  const isComplete  = reason === "complete" || reason === "bossDefeated";
+  const isBossMode  = !!data.bossHpFinal !== undefined && !!challengeConfig?.bossName;
   const correctCount = history.filter(h=>h.isCorrect).length;
   const totalQ = history.length;
   const maxScore = history.reduce((s,h)=>s+(h.question.points??1),0);
   let bestStreak=0, cur=0;
   history.forEach(h=>{ if(h.isCorrect){cur++;bestStreak=Math.max(bestStreak,cur);}else cur=0; });
+
+  // ── คำนวณ Boss damage จาก history ────────────────────────
+  const bossHits    = history.filter(h => h.isCorrect && (h.dmgDealt ?? 0) > 0);
+  const totalDmg    = bossHits.reduce((s, h) => s + (h.dmgDealt ?? 0), 0);
+  const maxHit      = bossHits.reduce((m, h) => Math.max(m, h.dmgDealt ?? 0), 0);
+  const penetCount  = bossHits.length;
   const [showDetail,setShowDetail]=useState(false);
   const [saving,setSaving]=useState(true);
   const [saveErr,setSaveErr]=useState(false);
@@ -1536,7 +1555,7 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
           {[["✓ ถูก",`${correctCount} ข้อ`,"#27ae60"],["★ คะแนน",`${score}`,tc],
             ["🔥 Streak",`${bestStreak} ข้อ`,"#f39c12"],["❤️ ชีวิตเหลือ",`${lives}/${livesMax}`,lives>0?"#27ae60":"#6b5a3e"]
-          ].map(([k,v,c])=>(
+          ].map(([k,v,c]: any)=>(
             <div key={k} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(212,175,55,.12)",
               borderRadius:"10px",padding:"12px",textAlign:"center"}}>
               <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
@@ -1544,6 +1563,47 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
             </div>
           ))}
         </div>
+
+        {/* ── Boss Damage Summary (แสดงเฉพาะ Boss mode) ── */}
+        {totalDmg > 0 && (
+          <div style={{
+            background:"linear-gradient(135deg,rgba(139,0,0,.15),rgba(180,0,0,.08))",
+            border:"1px solid rgba(231,76,60,.4)",
+            borderRadius:"12px",padding:"16px",marginBottom:"16px",
+          }}>
+            <div style={{color:"#e74c3c",fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",
+              fontWeight:700,marginBottom:"12px",display:"flex",alignItems:"center",gap:"8px"}}>
+              ⚔️ สรุปการโจมตีบอส
+              {bossDefeated && (
+                <span style={{background:"rgba(231,76,60,.2)",border:"1px solid rgba(231,76,60,.5)",
+                  borderRadius:"20px",padding:"2px 10px",fontSize:"11px",color:"#ff6b35"}}>
+                  💀 บอสพ่ายแพ้!
+                </span>
+              )}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
+              {[
+                ["⚔️ Damage รวม", totalDmg.toLocaleString(), "#e74c3c"],
+                ["🎯 ตีเจาะเกราะ", `${penetCount} ครั้ง`, "#e67e22"],
+                ["💥 สูงสุด/ครั้ง", maxHit.toLocaleString(), "#f39c12"],
+              ].map(([k,v,c]: any) => (
+                <div key={k} style={{background:"rgba(231,76,60,.06)",border:"1px solid rgba(231,76,60,.2)",
+                  borderRadius:"10px",padding:"10px",textAlign:"center"}}>
+                  <div style={{color:"#8b5555",fontSize:"10px",fontFamily:"'Cinzel',serif",marginBottom:"3px"}}>{k}</div>
+                  <div style={{color:c,fontSize:"18px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
+                </div>
+              ))}
+            </div>
+            {bossHpFinal !== undefined && !bossDefeated && (
+              <div style={{marginTop:"10px",color:"#6b3030",fontSize:"12px",
+                fontFamily:"'Cinzel',serif",textAlign:"center"}}>
+                HP บอสที่เหลือ: <span style={{color:"#e74c3c",fontWeight:700}}>
+                  {Number(bossHpFinal).toLocaleString()}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{marginBottom:"12px"}}>
           <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
