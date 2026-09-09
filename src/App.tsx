@@ -1756,33 +1756,20 @@ useEffect(()=>{
     run();
   }, [screen, cachedConfig]);
 
-  // ── 2) โหลดข้อสอบโหมด Challenge + Boss ─────────────────
+  // ── 2) โหลดข้อสอบโหมด Challenge + Boss (รวม 1 call) ────
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
     setLoadError("");
-    const setId = selectedSet.id;
-    apiGet({ action: "getChallengeConfig", setId }).then(async cfgData => {
-      const cc = cfgData.challengeConfig;
-      if (!cc) { setLoadError("ไม่พบ Challenge Config สำหรับ " + setId); return; }
-      setChallengeConfig(cc);
-
-      // ── โหลด Boss + PlayerStats ถ้า cc มี bossName ──────
-      if (cc.bossName) {
-        try {
-          const [bossRes, statsRes] = await Promise.all([
-            apiGet({ action: "getActiveBoss", bossName: cc.bossName }),
-            apiGet({ action: "getPlayerStats", studentId: student.id }),
-          ]);
-          setActiveBoss(bossRes.boss || null);
-          setPlayerStats(statsRes.stats || null);
-        } catch { /* ถ้าโหลด Boss ไม่ได้ก็เล่น Challenge ปกติ */ }
-      }
-
-      const setIds = cc.challengeSets || [];
-      const allQ = await Promise.all(
-        setIds.map((sid: string) => apiGet({ action: "getQuestions", setName: sid }).then((d: any) => d.questions || []))
-      );
-      const pool = shuffle(allQ.flat());
+    apiGet({
+      action:    "getChallengeBundle",
+      setId:     selectedSet.id,
+      studentId: student.id,
+    }).then((data: any) => {
+      if (data.error) { setLoadError(data.error); return; }
+      setChallengeConfig(data.challengeConfig);
+      setActiveBoss(data.boss   || null);
+      setPlayerStats(data.playerStats || null);
+      const pool = shuffle(data.questions || []);
       if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
       setChallengePool(pool);
       setScreen("challenge");
