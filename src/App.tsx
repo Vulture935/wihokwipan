@@ -988,75 +988,247 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
   );
 }
 
-function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
-  const { maxQuestions, lives: maxLives, challengeName } = challengeConfig;
-  const tc = theme.themeColor;
+// ── Boss UI Components ────────────────────────────────────
+function HPBar({ current, max, label = "", color = "#e74c3c", height = 12, showNumbers = true }: any) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
+  const c   = color === "auto" ? (pct > 50 ? "#e74c3c" : pct > 25 ? "#e67e22" : "#c0392b") : color;
+  return (
+    <div style={{ width: "100%" }}>
+      {(label || showNumbers) && (
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+          {label && <span style={{ color: "#a08070", fontSize: "11px", fontFamily: "'Cinzel',serif" }}>{label}</span>}
+          {showNumbers && <span style={{ color: c, fontSize: "11px", fontFamily: "'Cinzel',serif", fontWeight: 700 }}>
+            {Number(current).toLocaleString()} / {Number(max).toLocaleString()}
+          </span>}
+        </div>
+      )}
+      <div style={{ width: "100%", height: height + "px", background: "rgba(0,0,0,0.5)",
+        borderRadius: "4px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ height: "100%", width: pct + "%",
+          background: `linear-gradient(90deg,${c}cc,${c})`,
+          borderRadius: "4px", transition: "width 0.5s ease",
+          boxShadow: `0 0 8px ${c}88` }} />
+      </div>
+    </div>
+  );
+}
+
+function TimerRing({ timeLeft, totalTime }: any) {
+  const pct   = totalTime > 0 ? timeLeft / totalTime : 0;
+  const r     = 22;
+  const circ  = 2 * Math.PI * r;
+  const color = timeLeft < 30 ? "#e74c3c" : timeLeft < 60 ? "#e67e22" : "#d4af37";
+  return (
+    <div style={{ position: "relative", width: "56px", height: "56px", flexShrink: 0 }}>
+      <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+        <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth="4"
+          strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
+          style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s",
+            filter: `drop-shadow(0 0 4px ${color})` }} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontFamily: "'Courier New',monospace", fontSize: "11px", fontWeight: 700, color,
+          textShadow: timeLeft < 30 ? `0 0 8px ${color}` : "none" }}>
+          {formatTime(timeLeft)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DamageFlash({ damage, penetrated }: any) {
+  return (
+    <div style={{ position: "fixed", top: "38%", left: "50%", transform: "translateX(-50%)",
+      zIndex: 999, pointerEvents: "none", animation: "dmgFloat 1.4s ease-out forwards", textAlign: "center" }}>
+      {penetrated ? (
+        <>
+          <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: "44px", fontWeight: 900,
+            color: "#e74c3c", textShadow: "0 0 30px rgba(231,76,60,0.9)" }}>-{damage}</div>
+          <div style={{ color: "#ff6b35", fontSize: "13px", fontFamily: "'Cinzel',serif", marginTop: "4px" }}>
+            ⚔️ เจาะเกราะ!
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: "30px", fontWeight: 900, color: "#6b5a3e" }}>
+            BLOCKED
+          </div>
+          <div style={{ color: "#8b7355", fontSize: "12px", fontFamily: "'Cinzel',serif", marginTop: "4px" }}>
+            🛡️ เกราะกันไว้!
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── ChallengeScreen (รองรับ Boss Mode) ───────────────────
+function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss = null, playerStats = null }: any) {
+  const { maxQuestions, challengeName } = challengeConfig;
+  // ใช้ HP จริงจาก playerStats แทน challengeLives
+  const maxLives = playerStats?.effective?.hp ?? (challengeConfig.lives ?? 3);
+  const tc     = theme.themeColor;
   const ACCENT = "#e74c3c";
-  const [current, setCurrent] = useState(null);
+  const isBoss = !!boss; // Boss mode ถ้ามี boss ส่งมา
+
+  // เวลาต่อข้อ: Boss mode = 180 วิ + SPD*20, ปกติ = ไม่มี timer
+  const timePerQ = isBoss ? 180 + ((playerStats?.effective?.spd ?? 1) - 1) * 20 : 0;
+
+  const [current,         setCurrent]         = useState(null);
   const [shuffledChoices, setShuffledChoices] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [textVal, setTextVal] = useState("");
-  const [phase, setPhase] = useState("question");
-  const [lives, setLives] = useState(maxLives);
-  const [streak, setStreak] = useState(0);
-  const [score, setScore] = useState(0);
-  const [questionNum, setQuestionNum] = useState(0);
-  const [history, setHistory] = useState([]);
-  const usedIds = useRef(new Set());
-  const [shakeHeart, setShakeHeart] = useState(false);
-  const scoreRef = useRef(0);
-  const livesRef = useRef(maxLives);
-  const historyRef = useRef([]);
+  const [selected,        setSelected]        = useState(null);
+  const [textVal,         setTextVal]         = useState("");
+  const [phase,           setPhase]           = useState("question");
+  const [lives,           setLives]           = useState(maxLives);
+  const [streak,          setStreak]          = useState(0);
+  const [score,           setScore]           = useState(0);
+  const [questionNum,     setQuestionNum]     = useState(0);
+  const [history,         setHistory]         = useState([]);
+  const [shakeHeart,      setShakeHeart]      = useState(false);
+  const [bossHp,          setBossHp]          = useState(boss?.hpCurrent ?? 0);
+  const [dmgFlash,        setDmgFlash]        = useState<any>(null);
+  const [timeLeft,        setTimeLeft]        = useState(timePerQ);
+
+  const usedIds    = useRef(new Set());
+  const scoreRef   = useRef(0);
+  const livesRef   = useRef(maxLives);
+  const historyRef = useRef<any[]>([]);
+  const bossHpRef  = useRef(boss?.hpCurrent ?? 0);
+  const timerRef   = useRef<any>(null);
+
+  // ── Timer ต่อข้อ (Boss mode เท่านั้น) ──────────────────
+  useEffect(() => {
+    if (!isBoss || phase !== "question" || !current) return;
+    setTimeLeft(timePerQ);
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t: number) => {
+        if (t <= 1) { clearInterval(timerRef.current); submitAnswer(true); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [current, phase]);
 
   useEffect(()=>{ loadNext(0, maxLives, []); },[]);
 
-  function loadNext(currentNum, currentLives, currentHistory) {
+  function loadNext(currentNum: number, currentLives: number, currentHistory: any[]) {
     const q = pickChallengeQuestion(pool, usedIds.current);
-    if(!q || (maxQuestions>0 && currentNum>=maxQuestions)) {
-      onFinish({ history:currentHistory, score:scoreRef.current, lives:currentLives, livesMax:maxLives, reason:"complete", student, challengeConfig });
+    if (!q || (maxQuestions > 0 && currentNum >= maxQuestions)) {
+      onFinish({
+        history: currentHistory, score: scoreRef.current,
+        lives: currentLives, livesMax: maxLives,
+        reason: "complete", student, challengeConfig,
+        bossHpFinal: bossHpRef.current,
+        bossDefeated: isBoss && bossHpRef.current <= 0,
+      });
       return;
     }
     usedIds.current.add(q.id);
     setCurrent(q);
-    setShuffledChoices(q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))));
-    setSelected(null); setTextVal(""); setPhase("question");
+    setShuffledChoices(q.questionType === "text" ? [] : shuffle(q.choices.map((c: any, i: number) => ({ text: c, origIndex: i }))));
+    setSelected(null); setTextVal(""); setPhase("question"); setDmgFlash(null);
   }
 
-  function submitAnswer() {
-    if(!current) return;
-    let isCorrect=false, selectedOrigIndex=null;
-    if(current.questionType==="text"){
-      if(textVal.trim()==="") return;
-      isCorrect=checkTextAnswer(textVal, current.correctTextAnswer);
-    } else {
-      if(selected===null) return;
-      selectedOrigIndex=shuffledChoices[selected].origIndex;
-      isCorrect=selectedOrigIndex===current.answer;
+  function submitAnswer(timeUp = false) {
+    if (!current) return;
+    clearInterval(timerRef.current);
+
+    let isCorrect = false, selectedOrigIndex: number | null = null;
+    if (!timeUp) {
+      if (current.questionType === "text") {
+        if (textVal.trim() === "") return;
+        isCorrect = checkTextAnswer(textVal, current.correctTextAnswer);
+      } else {
+        if (selected === null) return;
+        selectedOrigIndex = shuffledChoices[selected].origIndex;
+        isCorrect = selectedOrigIndex === current.answer;
+      }
     }
-    const pts=current.points??1;
-    const newEntry={ question:current, isCorrect, selectedOrigIndex, userTextAnswer:textVal,
-      shuffledChoices:[...shuffledChoices], questionNumber:questionNum+1 };
-    const newHistory=[...historyRef.current, newEntry];
-    historyRef.current=newHistory;
+
+    const pts = isCorrect ? (current.points ?? 1) : 0;
+    const newEntry = {
+      question: current, isCorrect, selectedOrigIndex,
+      userTextAnswer: textVal, shuffledChoices: [...shuffledChoices],
+      questionNumber: questionNum + 1,
+    };
+    const newHistory = [...historyRef.current, newEntry];
+    historyRef.current = newHistory;
     setHistory(newHistory);
-    setQuestionNum(n=>n+1);
-    if(isCorrect){
-      scoreRef.current+=pts; setScore(s=>s+pts); setStreak(s=>s+1); setPhase("reveal_correct");
-      const nextNum=questionNum+1;
-      setTimeout(()=>{
-        if(maxQuestions>0&&nextNum>=maxQuestions){
-          onFinish({history:newHistory,score:scoreRef.current,lives:livesRef.current,livesMax:maxLives,reason:"complete",student,challengeConfig});
+    setQuestionNum((n: number) => n + 1);
+
+    // ── Boss Damage ──────────────────────────────────────
+    if (isBoss && isCorrect) {
+      const atk = playerStats?.effective?.atk ?? 1;
+      const dmg = pts + atk;
+      const pen = dmg > (boss.def ?? 0);
+      setDmgFlash({ damage: pen ? dmg : 0, penetrated: pen });
+
+      if (pen) {
+        const newBossHp = Math.max(0, bossHpRef.current - dmg);
+        bossHpRef.current = newBossHp;
+        setBossHp(newBossHp);
+
+        // บันทึก damage ลง Sheet
+        apiPost({
+          action: "saveBossDamage",
+          bossName:   boss.name,
+          studentId:  student.id,
+          nickname:   student.nickname,
+          damage:     dmg,
+          questionId: current.id,
+          setName:    current.setName,
+        }).catch(() => {});
+
+        // บอสตาย → จบทันที
+        if (newBossHp <= 0) {
+          scoreRef.current += pts;
+          setTimeout(() => {
+            onFinish({
+              history: newHistory, score: scoreRef.current,
+              lives: livesRef.current, livesMax: maxLives,
+              reason: "bossDefeated", student, challengeConfig,
+              bossHpFinal: 0, bossDefeated: true,
+            });
+          }, 1400);
+          return;
+        }
+      }
+    }
+
+    if (isCorrect) {
+      scoreRef.current += pts; setScore((s: number) => s + pts); setStreak((s: number) => s + 1);
+      setPhase("reveal_correct");
+      const nextNum = questionNum + 1;
+      setTimeout(() => {
+        if (maxQuestions > 0 && nextNum >= maxQuestions) {
+          onFinish({
+            history: newHistory, score: scoreRef.current,
+            lives: livesRef.current, livesMax: maxLives,
+            reason: "complete", student, challengeConfig,
+            bossHpFinal: bossHpRef.current,
+            bossDefeated: isBoss && bossHpRef.current <= 0,
+          });
         } else { loadNext(nextNum, livesRef.current, newHistory); }
-      },1200);
+      }, 1200);
     } else {
-      const newLives=livesRef.current-1; livesRef.current=newLives; setLives(newLives); setStreak(0);
-      setShakeHeart(true); setTimeout(()=>setShakeHeart(false),600); setPhase("reveal_wrong");
+      const newLives = livesRef.current - 1;
+      livesRef.current = newLives; setLives(newLives); setStreak(0);
+      setShakeHeart(true); setTimeout(() => setShakeHeart(false), 600);
+      setPhase("reveal_wrong");
     }
   }
 
   function handleNextAfterWrong() {
-    if(livesRef.current<=0){
-      onFinish({history:historyRef.current,score:scoreRef.current,lives:0,livesMax:maxLives,reason:"gameover",student,challengeConfig});
+    if (livesRef.current <= 0) {
+      onFinish({
+        history: historyRef.current, score: scoreRef.current,
+        lives: 0, livesMax: maxLives,
+        reason: "gameover", student, challengeConfig,
+        bossHpFinal: bossHpRef.current,
+        bossDefeated: false,
+      });
     } else { loadNext(questionNum, livesRef.current, historyRef.current); }
   }
 
@@ -1064,13 +1236,42 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><Spinner color={tc}/></div>
   );
 
-  const isReveal=phase==="reveal_correct"||phase==="reveal_wrong";
-  const isCorrectReveal=phase==="reveal_correct";
-  const progressPct=maxQuestions>0?(questionNum/maxQuestions)*100:0;
+  const isReveal        = phase === "reveal_correct" || phase === "reveal_wrong";
+  const isCorrectReveal = phase === "reveal_correct";
+  const progressPct     = maxQuestions > 0 ? (questionNum / maxQuestions) * 100 : 0;
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
       padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
+
+      {/* Damage Flash (Boss mode) */}
+      {isBoss && dmgFlash && isReveal && isCorrectReveal && (
+        <DamageFlash damage={dmgFlash.damage} penetrated={dmgFlash.penetrated} />
+      )}
+
+      {/* Boss HP Bar */}
+      {isBoss && boss && (
+        <div style={{background:"rgba(12,4,4,.94)",border:"1px solid rgba(231,76,60,.4)",
+          borderRadius:"12px",padding:"10px 14px",marginBottom:"8px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+              {boss.gifUrl && (
+                <img src={boss.gifUrl} alt="" style={{width:"28px",height:"28px",objectFit:"contain"}}
+                  onError={(e: any) => e.currentTarget.style.display = "none"} />
+              )}
+              <span style={{fontFamily:"'Cinzel Decorative',serif",color:"#e74c3c",fontSize:"13px"}}>
+                {boss.name}
+              </span>
+            </div>
+            <span style={{color:"#8b5555",fontSize:"11px",fontFamily:"'Cinzel',serif"}}>
+              🛡️ DEF {boss.def} · ต้องตี &gt; {boss.def}
+            </span>
+          </div>
+          <HPBar current={bossHp} max={boss.hpMax} color="auto" height={10} showNumbers={true} />
+        </div>
+      )}
+
+      {/* Header */}
       <div style={{background:"rgba(15,8,2,.94)",border:`1px solid ${ACCENT}44`,
         borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
@@ -1078,9 +1279,9 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
             <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
               {challengeConfig.logoImageUrl
                 ? <img src={challengeConfig.logoImageUrl} alt="logo"
-                    style={{width:"22px",height:"22px",borderRadius:"50%",objectFit:"cover"}}
-                    onError={e=>e.currentTarget.style.display="none"}/>
-                : <span style={{fontSize:"16px"}}>{challengeConfig.logoEmoji||"⚡"}</span>
+                    style={{width:"20px",height:"20px",borderRadius:"50%",objectFit:"cover"}}
+                    onError={(e: any) => e.currentTarget.style.display = "none"}/>
+                : <span style={{fontSize:"15px"}}>{challengeConfig.logoEmoji||"⚡"}</span>
               }
               <span style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
                 {challengeName||"Challenge Mode"}
@@ -1090,13 +1291,36 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
               {student.nickname} · ข้อที่ {questionNum+1}{maxQuestions>0?` / ${maxQuestions}`:""}
             </div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{color:tc,fontFamily:"'Cinzel',serif",fontSize:"22px",fontWeight:900}}>
-              {score}<span style={{fontSize:"12px",color:"#6b5a3e",marginLeft:"4px"}}>คะแนน</span>
+
+          {/* Timer (Boss) หรือ Score (Challenge ปกติ) */}
+          {isBoss && phase === "question" ? (
+            <TimerRing timeLeft={timeLeft} totalTime={timePerQ} />
+          ) : (
+            <div style={{textAlign:"right"}}>
+              <div style={{color:tc,fontFamily:"'Cinzel',serif",fontSize:"22px",fontWeight:900}}>
+                {score}<span style={{fontSize:"12px",color:"#6b5a3e",marginLeft:"4px"}}>คะแนน</span>
+              </div>
+              {streak>=3&&<div style={{fontSize:"11px",color:"#f39c12",fontFamily:"'Cinzel',serif"}}>🔥 ×{streak} ติดต่อกัน</div>}
             </div>
-            {streak>=3&&<div style={{fontSize:"11px",color:"#f39c12",fontFamily:"'Cinzel',serif"}}>🔥 ×{streak} ติดต่อกัน</div>}
-          </div>
+          )}
         </div>
+
+        {/* Boss player stats row */}
+        {isBoss && playerStats && (
+          <div style={{display:"flex",gap:"10px",marginBottom:"6px"}}>
+            {([["⚔️", playerStats.effective.atk], ["🛡️", playerStats.effective.def],
+               ["⚡", playerStats.effective.spd]] as any[]).map(([icon, val]: any) => (
+              <span key={icon} style={{color:"#8b7355",fontSize:"11px",fontFamily:"'Cinzel',serif"}}>
+                {icon} {val}
+              </span>
+            ))}
+            <span style={{marginLeft:"auto",color:tc,fontSize:"11px",fontFamily:"'Cinzel',serif"}}>
+              {score} คะแนน
+              {streak >= 3 && <span style={{color:"#f39c12",marginLeft:"6px"}}>🔥×{streak}</span>}
+            </span>
+          </div>
+        )}
+
         <div style={{display:"flex",alignItems:"center",gap:"10px",
           animation:shakeHeart?"heartshake 0.5s ease":"none"}}>
           <LifeHearts total={maxLives} remaining={lives}/>
@@ -1195,7 +1419,7 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
       </div>
 
       {!isReveal?(
-        <button onClick={submitAnswer}
+        <button onClick={()=>submitAnswer(false)}
           disabled={current.questionType!=="text"?selected===null:textVal.trim()===""}
           style={{width:"100%",padding:"14px",border:"none",borderRadius:"12px",
             background:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")
@@ -1205,7 +1429,7 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme }) {
             cursor:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")?"pointer":"not-allowed",
             boxShadow:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")
               ?`0 4px 20px ${tc}33`:"none"}}>
-          ยืนยันคำตอบ
+          {isBoss ? "⚔️ โจมตี" : "ยืนยันคำตอบ"}
         </button>
       ):isCorrectReveal?(
         <div style={{width:"100%",padding:"14px",borderRadius:"12px",background:"rgba(39,174,96,.08)",
@@ -1381,6 +1605,8 @@ export default function App() {
   const [challengePool,setChallengePool]=useState([]);
   const [challengeResult,setChallengeResult]=useState(null);
   const [cachedConfig, setCachedConfig] = useState(null);
+  const [activeBoss,   setActiveBoss]   = useState<any>(null);   // Boss Mode
+  const [playerStats,  setPlayerStats]  = useState<any>(null);   // Boss Mode
   const prefetchedQuestionsRef = useRef<any>(null);
   const isDirectLink=!!getSetFromUrl();
   const isChallenge=mode==="challenge";
@@ -1460,7 +1686,7 @@ useEffect(()=>{
     run();
   }, [screen, cachedConfig]);
 
-  // ── 2) โหลดข้อสอบโหมด Challenge (คงเดิม) ──────────────────
+  // ── 2) โหลดข้อสอบโหมด Challenge + Boss ─────────────────
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
     setLoadError("");
@@ -1469,9 +1695,22 @@ useEffect(()=>{
       const cc = cfgData.challengeConfig;
       if (!cc) { setLoadError("ไม่พบ Challenge Config สำหรับ " + setId); return; }
       setChallengeConfig(cc);
+
+      // ── โหลด Boss + PlayerStats ถ้า cc มี bossName ──────
+      if (cc.bossName) {
+        try {
+          const [bossRes, statsRes] = await Promise.all([
+            apiGet({ action: "getActiveBoss" }),
+            apiGet({ action: "getPlayerStats", studentId: student.id }),
+          ]);
+          setActiveBoss(bossRes.boss || null);
+          setPlayerStats(statsRes.stats || null);
+        } catch { /* ถ้าโหลด Boss ไม่ได้ก็เล่น Challenge ปกติ */ }
+      }
+
       const setIds = cc.challengeSets || [];
       const allQ = await Promise.all(
-        setIds.map(sid => apiGet({ action: "getQuestions", setName: sid }).then(d => d.questions || []))
+        setIds.map((sid: string) => apiGet({ action: "getQuestions", setName: sid }).then((d: any) => d.questions || []))
       );
       const pool = shuffle(allQ.flat());
       if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
@@ -1481,12 +1720,13 @@ useEffect(()=>{
   }, [screen]);
   
   const goHome=()=>{
-  setResult(null); setQuestions([]);
-  setChallengeResult(null); setChallengePool([]);
-  setCachedConfig(null); // 👈 เพิ่มบรรทัดนี้เพื่อล้าง cache ชุดเดิม
-  if(isDirectLink){ setStudent(null); setScreen("login"); }
-  else { setSet(null); setStudent(null); setScreen("setSelect"); }
-};
+    setResult(null); setQuestions([]);
+    setChallengeResult(null); setChallengePool([]);
+    setCachedConfig(null);
+    setActiveBoss(null); setPlayerStats(null);
+    if(isDirectLink){ setStudent(null); setScreen("login"); }
+    else { setSet(null); setStudent(null); setScreen("setSelect"); }
+  };
   const goRetry=()=>{
     setQuestions([]); setResult(null);
     setChallengeResult(null); setChallengePool([]);
@@ -1509,6 +1749,7 @@ useEffect(()=>{
         @keyframes pfloat{0%,100%{transform:translateY(0)scale(1);opacity:.3}50%{transform:translateY(-18px)scale(1.2);opacity:.65}}
         @keyframes pspin{to{transform:rotate(360deg)}}
         @keyframes heartshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+        @keyframes dmgFloat{0%{transform:translateX(-50%) translateY(0);opacity:1}100%{transform:translateX(-50%) translateY(-60px);opacity:0}}
         input:focus{border-color:${tc}99!important;box-shadow:0 0 0 2px ${tc}22;}
         button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
         button{transition:all .18s;}
@@ -1578,7 +1819,10 @@ useEffect(()=>{
           <ChallengeScreen key={Date.now()}
             challengeConfig={challengeConfig} student={student} pool={challengePool}
             onFinish={d=>{ setChallengeResult(d); setScreen("challenge-result"); }}
-            theme={theme}/>
+            theme={theme}
+            boss={activeBoss}
+            playerStats={playerStats}
+          />
         )}
         {screen==="challenge-result"&&challengeResult&&(
           <ChallengeResultScreen data={challengeResult} onRetry={goRetry} onHome={goHome} theme={theme}/>
