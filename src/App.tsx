@@ -377,7 +377,10 @@ const lookup=async()=>{
         <div style={{textAlign:"center",marginBottom:"24px"}}>
           <div style={{marginBottom:"10px"}}>
             {isChallenge
-              ? <ChallengeLogo logoImageUrl={challengeConfig?.logoImageUrl||""} logoEmoji={challengeConfig?.logoEmoji||"⚡"} size={52}/>
+              ? <ChallengeLogo
+                  logoImageUrl={challengeConfig?.logoImageUrl || theme.logoImageUrl || ""}
+                  logoEmoji={challengeConfig?.logoEmoji || theme.logoEmoji || "⚡"}
+                  size={52}/>
               : <div style={{fontSize:"44px",lineHeight:1}}>{theme.logoEmoji}</div>
             }
           </div>
