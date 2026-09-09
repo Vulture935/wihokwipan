@@ -1300,7 +1300,7 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
                 ? <img src={challengeConfig.logoImageUrl} alt="logo"
                     style={{width:"20px",height:"20px",borderRadius:"50%",objectFit:"cover"}}
                     onError={(e: any) => e.currentTarget.style.display = "none"}/>
-                : <span style={{fontSize:"15px"}}>{challengeConfig.logoEmoji||"⚡"}</span>
+                : <span style={{fontSize:"20px"}}>{challengeConfig.logoEmoji || challengeConfig.logoImageId || "⚡"}</span>
               }
               <span style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
                 {challengeName||"Challenge Mode"}
