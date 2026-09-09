@@ -1113,15 +1113,47 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
 
   useEffect(()=>{ loadNext(0, maxLives, []); },[]);
 
+  // ── helper: คำนวณ damage รวม session แล้วส่งครั้งเดียว ──
+  function saveFinalBossDamage(finalHistory: any[]) {
+    if (!isBoss || !boss) return;
+    const correctCount = finalHistory.filter(h => h.isCorrect).length;
+    const atk          = playerStats?.effective?.atk ?? 1;
+    const totalDmg     = correctCount + atk; // ← สูตร: ข้อถูก + ATK
+    const pen          = totalDmg > (boss.def ?? 0);
+    if (!pen) return; // ตีไม่เข้าเกราะ ไม่บันทึก
+
+    const newBossHp = Math.max(0, bossHpRef.current - totalDmg);
+    bossHpRef.current = newBossHp;
+    setBossHp(newBossHp);
+
+    apiPost({
+      action:    "saveBossDamage",
+      bossName:  boss.name,
+      studentId: student.id,
+      nickname:  student.nickname,
+      damage:    totalDmg,
+      questionId: "session",
+      setName:   "session",
+    }).catch(() => {});
+
+    return { totalDmg, pen, newBossHp };
+  }
+
   function loadNext(currentNum: number, currentLives: number, currentHistory: any[]) {
     const q = pickChallengeQuestion(pool, usedIds.current);
     if (!q || (maxQuestions > 0 && currentNum >= maxQuestions)) {
+      // จบ session → ส่ง damage ครั้งเดียว
+      const dmgResult = saveFinalBossDamage(currentHistory);
+      const finalBossHp     = dmgResult?.newBossHp ?? bossHpRef.current;
+      const finalBossDefeated = isBoss && finalBossHp <= 0;
       onFinish({
         history: currentHistory, score: scoreRef.current,
         lives: currentLives, livesMax: maxLives,
-        reason: "complete", student, challengeConfig,
-        bossHpFinal: bossHpRef.current,
-        bossDefeated: isBoss && bossHpRef.current <= 0,
+        reason: finalBossDefeated ? "bossDefeated" : "complete",
+        student, challengeConfig,
+        bossHpFinal: finalBossHp,
+        bossDefeated: finalBossDefeated,
+        totalBossDmg: dmgResult?.totalDmg ?? 0,
       });
       return;
     }
@@ -1149,64 +1181,24 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
 
     const pts = isCorrect ? (current.points ?? 1) : 0;
 
-    // คำนวณ damage ล่วงหน้าเพื่อเก็บใน history
-    let dmgDealt = 0;
+    // preview damage flash (แค่แสดงผล ไม่บันทึก Sheet)
     if (isBoss && isCorrect) {
+      const correctSoFar = historyRef.current.filter(h => h.isCorrect).length + 1;
       const atk = playerStats?.effective?.atk ?? 1;
-      const dmg = pts + atk;
-      const pen = dmg > (boss.def ?? 0);
-      if (pen) dmgDealt = dmg;
+      const previewDmg = correctSoFar + atk;
+      const pen = previewDmg > (boss.def ?? 0);
+      setDmgFlash({ damage: pen ? previewDmg : 0, penetrated: pen });
     }
 
     const newEntry = {
       question: current, isCorrect, selectedOrigIndex,
       userTextAnswer: textVal, shuffledChoices: [...shuffledChoices],
       questionNumber: questionNum + 1,
-      dmgDealt, // ← เก็บ damage ที่ทำได้ต่อข้อ
     };
     const newHistory = [...historyRef.current, newEntry];
     historyRef.current = newHistory;
     setHistory(newHistory);
     setQuestionNum((n: number) => n + 1);
-
-    // ── Boss Damage ──────────────────────────────────────
-    if (isBoss && isCorrect) {
-      const atk = playerStats?.effective?.atk ?? 1;
-      const dmg = pts + atk;
-      const pen = dmg > (boss.def ?? 0);
-      setDmgFlash({ damage: pen ? dmg : 0, penetrated: pen });
-
-      if (pen) {
-        const newBossHp = Math.max(0, bossHpRef.current - dmg);
-        bossHpRef.current = newBossHp;
-        setBossHp(newBossHp);
-
-        // บันทึก damage ลง Sheet
-        apiPost({
-          action: "saveBossDamage",
-          bossName:   boss.name,
-          studentId:  student.id,
-          nickname:   student.nickname,
-          damage:     dmg,
-          questionId: current.id,
-          setName:    current.setName,
-        }).catch(() => {});
-
-        // บอสตาย → จบทันที
-        if (newBossHp <= 0) {
-          scoreRef.current += pts;
-          setTimeout(() => {
-            onFinish({
-              history: newHistory, score: scoreRef.current,
-              lives: livesRef.current, livesMax: maxLives,
-              reason: "bossDefeated", student, challengeConfig,
-              bossHpFinal: 0, bossDefeated: true,
-            });
-          }, 1400);
-          return;
-        }
-      }
-    }
 
     if (isCorrect) {
       scoreRef.current += pts; setScore((s: number) => s + pts); setStreak((s: number) => s + 1);
@@ -1214,12 +1206,18 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
       const nextNum = questionNum + 1;
       setTimeout(() => {
         if (maxQuestions > 0 && nextNum >= maxQuestions) {
+          // จบครบจำนวน → ส่ง damage ครั้งเดียว
+          const dmgResult       = saveFinalBossDamage(newHistory);
+          const finalBossHp     = dmgResult?.newBossHp ?? bossHpRef.current;
+          const finalBossDefeated = isBoss && finalBossHp <= 0;
           onFinish({
             history: newHistory, score: scoreRef.current,
             lives: livesRef.current, livesMax: maxLives,
-            reason: "complete", student, challengeConfig,
-            bossHpFinal: bossHpRef.current,
-            bossDefeated: isBoss && bossHpRef.current <= 0,
+            reason: finalBossDefeated ? "bossDefeated" : "complete",
+            student, challengeConfig,
+            bossHpFinal: finalBossHp,
+            bossDefeated: finalBossDefeated,
+            totalBossDmg: dmgResult?.totalDmg ?? 0,
           });
         } else { loadNext(nextNum, livesRef.current, newHistory); }
       }, 1200);
@@ -1233,12 +1231,18 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
 
   function handleNextAfterWrong() {
     if (livesRef.current <= 0) {
+      // หมดชีวิต → ส่ง damage ครั้งเดียว
+      const dmgResult       = saveFinalBossDamage(historyRef.current);
+      const finalBossHp     = dmgResult?.newBossHp ?? bossHpRef.current;
+      const finalBossDefeated = isBoss && finalBossHp <= 0;
       onFinish({
         history: historyRef.current, score: scoreRef.current,
         lives: 0, livesMax: maxLives,
-        reason: "gameover", student, challengeConfig,
-        bossHpFinal: bossHpRef.current,
-        bossDefeated: false,
+        reason: finalBossDefeated ? "bossDefeated" : "gameover",
+        student, challengeConfig,
+        bossHpFinal: finalBossHp,
+        bossDefeated: finalBossDefeated,
+        totalBossDmg: dmgResult?.totalDmg ?? 0,
       });
     } else { loadNext(questionNum, livesRef.current, historyRef.current); }
   }
@@ -1474,11 +1478,12 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
   let bestStreak=0, cur=0;
   history.forEach(h=>{ if(h.isCorrect){cur++;bestStreak=Math.max(bestStreak,cur);}else cur=0; });
 
-  // ── คำนวณ Boss damage จาก history ────────────────────────
-  const bossHits    = history.filter(h => h.isCorrect && (h.dmgDealt ?? 0) > 0);
-  const totalDmg    = bossHits.reduce((s, h) => s + (h.dmgDealt ?? 0), 0);
-  const maxHit      = bossHits.reduce((m, h) => Math.max(m, h.dmgDealt ?? 0), 0);
-  const penetCount  = bossHits.length;
+  // ── Boss damage summary ──────────────────────────────────
+  const totalDmg   = data.totalBossDmg ?? 0;
+  const correctCount = history.filter(h=>h.isCorrect).length;
+  const atk        = 1; // แสดง info เฉยๆ ไม่ต้องคำนวณใหม่
+  const penetCount = totalDmg > 0 ? 1 : 0; // ส่งครั้งเดียว = 1 hit หรือ 0
+  const maxHit     = totalDmg; // = damage รวมทั้ง session
   const [showDetail,setShowDetail]=useState(false);
   const [saving,setSaving]=useState(true);
   const [saveErr,setSaveErr]=useState(false);
@@ -1581,21 +1586,26 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
                 </span>
               )}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
               {[
                 ["⚔️ Damage รวม", totalDmg.toLocaleString(), "#e74c3c"],
-                ["🎯 ตีเจาะเกราะ", `${penetCount} ครั้ง`, "#e67e22"],
-                ["💥 สูงสุด/ครั้ง", maxHit.toLocaleString(), "#f39c12"],
+                ["✓ ข้อถูก", `${correctCount} ข้อ`, "#27ae60"],
               ].map(([k,v,c]: any) => (
                 <div key={k} style={{background:"rgba(231,76,60,.06)",border:"1px solid rgba(231,76,60,.2)",
-                  borderRadius:"10px",padding:"10px",textAlign:"center"}}>
-                  <div style={{color:"#8b5555",fontSize:"10px",fontFamily:"'Cinzel',serif",marginBottom:"3px"}}>{k}</div>
-                  <div style={{color:c,fontSize:"18px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
+                  borderRadius:"10px",padding:"12px",textAlign:"center"}}>
+                  <div style={{color:"#8b5555",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
+                  <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
                 </div>
               ))}
             </div>
+            <div style={{marginTop:"10px",padding:"10px",background:"rgba(231,76,60,.06)",
+              borderRadius:"8px",textAlign:"center"}}>
+              <span style={{color:"#8b5555",fontSize:"12px",fontFamily:"'Cinzel',serif"}}>
+                สูตร: {correctCount} ข้อถูก + ATK = {totalDmg} damage
+              </span>
+            </div>
             {bossHpFinal !== undefined && !bossDefeated && (
-              <div style={{marginTop:"10px",color:"#6b3030",fontSize:"12px",
+              <div style={{marginTop:"8px",color:"#6b3030",fontSize:"12px",
                 fontFamily:"'Cinzel',serif",textAlign:"center"}}>
                 HP บอสที่เหลือ: <span style={{color:"#e74c3c",fontWeight:700}}>
                   {Number(bossHpFinal).toLocaleString()}
