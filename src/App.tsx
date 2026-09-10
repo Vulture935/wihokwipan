@@ -163,7 +163,7 @@ function pickChallengeQuestion(pool, usedIds) {
   return available[Math.floor(Math.random()*available.length)];
 }
 
-const Particles = React.memo(function Particles({ color }) {
+const Particles = React.memo(function Particles({ color }: { color: string }) {
   const pts=useRef([...Array(18)].map(()=>({
     w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
     d:Math.random()*8+6,delay:Math.random()*6,
