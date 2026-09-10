@@ -263,7 +263,7 @@ function CharacterPopup({ charData, status, onClose, tc }) {
   );
 }
 
-const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
+const LifeHearts = React.memo(function LifeHearts({ total, remaining }: any) {
   return (
     <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
       {[...Array(total)].map((_,i)=>(
@@ -274,9 +274,9 @@ const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
       ))}
     </div>
   );
-}
+});
 
-const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
+const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }: any) {
   if (logoImageUrl) {
     return (
       <div style={{width:size+"px",height:size+"px",borderRadius:"50%",overflow:"hidden",
@@ -289,7 +289,7 @@ const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoj
     );
   }
   return <div style={{fontSize:size+"px",textAlign:"center",lineHeight:1}}>{logoEmoji||"⚡"}</div>;
-}
+});
 
 function SetSelectScreen({ quizSets, onSelect, theme }: any) {
   const [search,setSearch]=useState("");
