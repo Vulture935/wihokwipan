@@ -275,7 +275,15 @@ const LifeHearts = React.memo(function LifeHearts({ total, remaining }: { total:
   );
 });
 
-const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
+const ChallengeLogo = React.memo(function ChallengeLogo({ 
+  logoImageUrl, 
+  logoEmoji, 
+  size = 52 
+}: { 
+  logoImageUrl?: string; 
+  logoEmoji?: string; 
+  size?: number; 
+}) {
   if (logoImageUrl) {
     return (
       <div style={{width:size+"px",height:size+"px",borderRadius:"50%",overflow:"hidden",
