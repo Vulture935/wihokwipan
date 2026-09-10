@@ -163,8 +163,7 @@ function pickChallengeQuestion(pool, usedIds) {
   return available[Math.floor(Math.random()*available.length)];
 }
 
-const Particles = React.memo(function Particles(props: any) {
-  const color = props.color;
+const Particles = React.memo(function Particles({ color }) {
   const pts=useRef([...Array(18)].map(()=>({
     w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
     d:Math.random()*8+6,delay:Math.random()*6,
@@ -264,7 +263,7 @@ function CharacterPopup({ charData, status, onClose, tc }) {
   );
 }
 
-const LifeHearts = React.memo(function LifeHearts({ total, remaining }: any) {
+const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
   return (
     <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
       {[...Array(total)].map((_,i)=>(
@@ -277,7 +276,7 @@ const LifeHearts = React.memo(function LifeHearts({ total, remaining }: any) {
   );
 });
 
-const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }: any) {
+const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
   if (logoImageUrl) {
     return (
       <div style={{width:size+"px",height:size+"px",borderRadius:"50%",overflow:"hidden",
@@ -611,7 +610,7 @@ function TextInput({ value, onChange, tc, disabled=false }) {
 }
 
 // ── โจทย์กล่อง — ใช้ QuestionText (รองรับ Markdown) ────────
-const QuestionBox = React.memo(function QuestionBox({ q, current, tc }: any) {
+const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
   return (
     <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
       padding:"10px",marginBottom:"16px",minHeight:"180px",
@@ -1063,7 +1062,7 @@ const HPBar = React.memo(function HPBar({ current, max, label = "", color = "#e7
       </div>
     </div>
   );
-}
+});
 
 const TimerRing = React.memo(function TimerRing({ timeLeft, totalTime }: any) {
   const pct   = totalTime > 0 ? timeLeft / totalTime : 0;
@@ -1087,7 +1086,7 @@ const TimerRing = React.memo(function TimerRing({ timeLeft, totalTime }: any) {
       </div>
     </div>
   );
-}
+});
 
 function DamageFlash({ damage, penetrated }: any) {
   return (
