@@ -1,14 +1,36 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css"; // 👈 เพิ่มบรรทัดนี้ลงไป
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+
+// ── Lazy load Markdown+KaTeX เฉพาะตอนที่ต้องใช้จริง ────────
+// ลด bundle size ~280KB ที่โหลดตอนเปิดหน้าแรก
+let ReactMarkdown: any = null;
+let remarkMathPlugin: any = null;
+let rehypeKatexPlugin: any = null;
+let katexLoaded = false;
+
+async function loadMarkdownLibs() {
+  if (katexLoaded) return;
+  const [md, rm, rk] = await Promise.all([
+    import("react-markdown"),
+    import("remark-math"),
+    import("rehype-katex"),
+  ]);
+  // โหลด KaTeX CSS
+  if (!document.getElementById("katex-css")) {
+    const link = document.createElement("link");
+    link.id   = "katex-css";
+    link.rel  = "stylesheet";
+    link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css";
+    document.head.appendChild(link);
+  }
+  ReactMarkdown      = md.default;
+  remarkMathPlugin   = rm.default;
+  rehypeKatexPlugin  = rk.default;
+  katexLoaded = true;
+}
 
 // ============================================================
-// MARKDOWN RENDERER — ไม่ต้องติดตั้ง library เพิ่ม
-// รองรับ: **bold**, *italic*, `code`, ~~strikethrough~~, \n
+// MARKDOWN RENDERER — Lazy load KaTeX เฉพาะตอนใช้จริง
 // ============================================================
-// ✅ เปลี่ยนเป็นอันนี้ (แสดงสมการและ Markdown ได้สมบูรณ์)
 const MdText = React.memo(function MdText({
   children,
   style = {},
@@ -16,14 +38,26 @@ const MdText = React.memo(function MdText({
   children?: React.ReactNode;
   style?: React.CSSProperties;
 }) {
+  const [ready, setReady] = useState(katexLoaded);
+
+  useEffect(() => {
+    if (!katexLoaded) {
+      loadMarkdownLibs().then(() => setReady(true));
+    }
+  }, []);
+
   if (!children) return null;
+  if (!ready || !ReactMarkdown) {
+    // fallback ก่อน KaTeX โหลดเสร็จ
+    return <span style={{ display: "inline-block", ...style }}>{String(children)}</span>;
+  }
   return (
     <span style={{ display: "inline-block", ...style }}>
       <ReactMarkdown
-        remarkPlugins={[remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        remarkPlugins={[remarkMathPlugin]}
+        rehypePlugins={[rehypeKatexPlugin]}
         components={{
-          p: ({ node, ...props }) => <span {...props} />,
+          p: ({ node, ...props }: any) => <span {...props} />,
         }}
       >
         {String(children)}
@@ -129,7 +163,7 @@ function pickChallengeQuestion(pool, usedIds) {
   return available[Math.floor(Math.random()*available.length)];
 }
 
-function Particles({ color }) {
+const Particles = React.memo(function Particles({ color }) {
   const pts=useRef([...Array(18)].map(()=>({
     w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
     d:Math.random()*8+6,delay:Math.random()*6,
@@ -143,9 +177,9 @@ function Particles({ color }) {
       ))}
     </div>
   );
-}
+});
 
-function TimerBar({ timeLeft, totalTime, color }) {
+const TimerBar = React.memo(function TimerBar({ timeLeft, totalTime, color }) {
   const pct=(timeLeft/totalTime)*100;
   const c=pct>50?color:pct>20?"#e67e22":"#e74c3c";
   return (
@@ -154,9 +188,9 @@ function TimerBar({ timeLeft, totalTime, color }) {
         transition:"width 1s linear,background .5s",boxShadow:`0 0 6px ${c}`}}/>
     </div>
   );
-}
+});
 
-function Spinner({ color }) {
+const Spinner = React.memo(function Spinner({ color }) {
   return (
     <div style={{textAlign:"center",padding:"40px 0"}}>
       <div style={{width:"36px",height:"36px",borderRadius:"50%",margin:"0 auto 14px",
@@ -164,9 +198,9 @@ function Spinner({ color }) {
       <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px"}}>กำลังโหลด...</p>
     </div>
   );
-}
+});
 
-function PointsBadge({ points, tc }) {
+const PointsBadge = React.memo(function PointsBadge({ points, tc }: any) {
   if(!points||points===1) return null;
   return (
     <span style={{background:`linear-gradient(135deg,${tc}33,${tc}11)`,border:`1px solid ${tc}66`,
@@ -175,7 +209,7 @@ function PointsBadge({ points, tc }) {
       ★ {points} คะแนน
     </span>
   );
-}
+});
 
 function CharacterPopup({ charData, status, onClose, tc }) {
   const [visible,setVisible]=useState(false);
@@ -229,7 +263,7 @@ function CharacterPopup({ charData, status, onClose, tc }) {
   );
 }
 
-function LifeHearts({ total, remaining }) {
+const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
   return (
     <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
       {[...Array(total)].map((_,i)=>(
@@ -242,7 +276,7 @@ function LifeHearts({ total, remaining }) {
   );
 }
 
-function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
+const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
   if (logoImageUrl) {
     return (
       <div style={{width:size+"px",height:size+"px",borderRadius:"50%",overflow:"hidden",
@@ -576,16 +610,16 @@ function TextInput({ value, onChange, tc, disabled=false }) {
 }
 
 // ── โจทย์กล่อง — ใช้ QuestionText (รองรับ Markdown) ────────
-function QuestionBox({ q, current, tc }) {
+const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
   return (
     <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
       padding:"10px",marginBottom:"16px",minHeight:"180px",
       display:"flex",alignItems:"center",justifyContent:"center"}}>
       {q.imageUrl ? (
         <img src={q.imageUrl} alt="โจทย์"
+          loading="lazy" decoding="async"
           style={{width:"100%",maxHeight:"400px",objectFit:"contain",borderRadius:"8px",display:"block"}}/>
       ) : q.setText ? (
-        // ✅ โจทย์ข้อความรองรับ Markdown
         <QuestionText text={q.setText}/>
       ) : (
         <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"13px",textAlign:"center",margin:0}}>
@@ -1006,7 +1040,7 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
 }
 
 // ── Boss UI Components ────────────────────────────────────
-function HPBar({ current, max, label = "", color = "#e74c3c", height = 12, showNumbers = true }: any) {
+const HPBar = React.memo(function HPBar({ current, max, label = "", color = "#e74c3c", height = 12, showNumbers = true }: any) {
   const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
   const c   = color === "auto" ? (pct > 50 ? "#e74c3c" : pct > 25 ? "#e67e22" : "#c0392b") : color;
   return (
@@ -1030,7 +1064,7 @@ function HPBar({ current, max, label = "", color = "#e74c3c", height = 12, showN
   );
 }
 
-function TimerRing({ timeLeft, totalTime }: any) {
+const TimerRing = React.memo(function TimerRing({ timeLeft, totalTime }: any) {
   const pct   = totalTime > 0 ? timeLeft / totalTime : 0;
   const r     = 22;
   const circ  = 2 * Math.PI * r;
@@ -1703,44 +1737,41 @@ export default function App() {
   const [playerStats,  setPlayerStats]  = useState<any>(null);   // Boss Mode
   const prefetchedQuestionsRef = useRef<any>(null);
   const isDirectLink=!!getSetFromUrl();
-  const isChallenge=mode==="challenge";
+  const isChallenge = mode === "challenge";
+  // ── useMemo สำหรับค่าที่คำนวณซ้ำ ──────────────────────────
+  const setFromUrl = React.useMemo(() => getSetFromUrl(), []);
 
-useEffect(() => {
-    apiGet({ action: "getQuizSets" })
-      .then(data => {
-        if (data.sets && data.sets.length > 0) {
-          setQuizSets(data.sets);
-        }
-      })
-      .catch(() => {});
-  }, []);
-  
-useEffect(()=>{
-    const setId=getSetFromUrl();
-    if(setId){
-      apiGet({action:"getConfig",setId}).then(d=>{ 
-        if(d.config) {
-          setTheme(buildTheme(d.config)); 
-          setCachedConfig(d.config); 
-        } 
-      });
-      const pseudoSet={ id:setId, name:setId, total:0, passingScore:0, timeLimit:0 };
-      if(isChallenge){
-        setSet(pseudoSet); setScreen("login");
-      } else {
-        apiGet({ action: "getQuizSets" }).then(res => {
-          const sets = res.sets || [];
+  // ── โหลด QuizSets + Config + Set พร้อมกันใน 1 useEffect ──
+  useEffect(() => {
+    const setId = setFromUrl;
+
+    if (setId) {
+      // มี ?set= → โหลด config + quizSets พร้อมกัน
+      Promise.all([
+        apiGet({ action: "getConfig", setId }),
+        isChallenge ? Promise.resolve({ sets: [] }) : apiGet({ action: "getQuizSets" }),
+      ]).then(([cfgData, setsData]) => {
+        if (cfgData.config) { setTheme(buildTheme(cfgData.config)); setCachedConfig(cfgData.config); }
+        if (setsData.sets?.length) setQuizSets(setsData.sets);
+
+        if (isChallenge) {
+          setSet({ id: setId, name: setId, total: 0, passingScore: 0, timeLimit: 0 });
+          setScreen("login");
+        } else {
+          const sets = setsData.sets || [];
           const found = sets.find((s: any) => s.id === setId);
-          if(found){ 
-            setSet(found); 
-            setScreen("login"); 
-          } else {
-            setScreen("setSelect");
-          }
-        }).catch(() => setScreen("setSelect"));
-      }
-    } else setScreen("setSelect");
-  },[]);
+          if (found) { setSet(found); setScreen("login"); }
+          else setScreen("setSelect");
+        }
+      }).catch(() => setScreen("setSelect"));
+    } else {
+      // ไม่มี ?set= → โหลด quizSets อย่างเดียว
+      apiGet({ action: "getQuizSets" })
+        .then(data => { if (data.sets?.length) setQuizSets(data.sets); })
+        .catch(() => {})
+        .finally(() => setScreen("setSelect"));
+    }
+  }, []);
  // ── 1) โหลดข้อสอบโหมดปกติ (รองรับ Prefetch) ──────────────────
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || isChallenge) return;
@@ -1800,19 +1831,20 @@ useEffect(()=>{
     }).catch(() => setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
   }, [screen]);
   
-  const goHome=()=>{
+  const goHome = useCallback(() => {
     setResult(null); setQuestions([]);
     setChallengeResult(null); setChallengePool([]);
     setCachedConfig(null);
     setActiveBoss(null); setPlayerStats(null);
     if(isDirectLink){ setStudent(null); setScreen("login"); }
     else { setSet(null); setStudent(null); setScreen("setSelect"); }
-  };
-  const goRetry=()=>{
+  }, [isDirectLink]);
+
+  const goRetry = useCallback(() => {
     setQuestions([]); setResult(null);
     setChallengeResult(null); setChallengePool([]);
     setScreen("loading");
-  };
+  }, []);
 
   const tc=theme.themeColor;
   const bg=theme.bgImageUrl
