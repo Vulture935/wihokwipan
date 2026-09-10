@@ -1870,10 +1870,10 @@ export default function App() {
         a:hover{opacity:.8;}
         ::-webkit-scrollbar{width:5px;}
         ::-webkit-scrollbar-thumb{background:${tc}44;border-radius:3px;}
-      `}</style>
+`}</style>
       <div style={{minHeight:"100vh",fontFamily:"'Sarabun',sans-serif",background:bg}}>
         <Particles color={tc}/>
-       {screen==="setSelect"&&(
+        {screen==="setSelect"&&(
           <SetSelectScreen 
             quizSets={quizSets} // 👈 ส่ง quizSets ที่ดึงจากชีทเข้าไป
             onSelect={s=>{
