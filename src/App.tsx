@@ -274,7 +274,7 @@ const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
       ))}
     </div>
   );
-}
+});
 
 const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
   if (logoImageUrl) {
@@ -289,7 +289,7 @@ const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoj
     );
   }
   return <div style={{fontSize:size+"px",textAlign:"center",lineHeight:1}}>{logoEmoji||"⚡"}</div>;
-}
+});
 
 function SetSelectScreen({ quizSets, onSelect, theme }: any) {
   const [search,setSearch]=useState("");
@@ -628,7 +628,7 @@ const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
       )}
     </div>
   );
-}
+});
 
 // ── เฉลย — ใช้ MdText ────────────────────────────────────
 // ── เฉลย — รองรับ solutionText + links ──────────────────
@@ -1062,7 +1062,7 @@ const HPBar = React.memo(function HPBar({ current, max, label = "", color = "#e7
       </div>
     </div>
   );
-}
+});
 
 const TimerRing = React.memo(function TimerRing({ timeLeft, totalTime }: any) {
   const pct   = totalTime > 0 ? timeLeft / totalTime : 0;
@@ -1086,7 +1086,7 @@ const TimerRing = React.memo(function TimerRing({ timeLeft, totalTime }: any) {
       </div>
     </div>
   );
-}
+});
 
 function DamageFlash({ damage, penetrated }: any) {
   return (
