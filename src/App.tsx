@@ -67,7 +67,7 @@ const MdText = React.memo(function MdText({
 });
 
 // โจทย์ข้อความ (ใช้ MdText)
-function QuestionText({ text }) {
+function QuestionText({ text }: { text?: string }) {
   if (!text) return null;
   return (
     <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",
@@ -163,7 +163,7 @@ function pickChallengeQuestion(pool, usedIds) {
   return available[Math.floor(Math.random()*available.length)];
 }
 
-const Particles = React.memo(function Particles({ color }) {
+const Particles = React.memo(function Particles({ color }: { color: string }) {
   const pts=useRef([...Array(18)].map(()=>({
     w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
     d:Math.random()*8+6,delay:Math.random()*6,
@@ -179,7 +179,7 @@ const Particles = React.memo(function Particles({ color }) {
   );
 });
 
-const TimerBar = React.memo(function TimerBar({ timeLeft, totalTime, color }) {
+const TimerBar = React.memo(function TimerBar({ timeLeft, totalTime, color }: { timeLeft: number; totalTime: number; color: string }) {
   const pct=(timeLeft/totalTime)*100;
   const c=pct>50?color:pct>20?"#e67e22":"#e74c3c";
   return (
@@ -190,7 +190,7 @@ const TimerBar = React.memo(function TimerBar({ timeLeft, totalTime, color }) {
   );
 });
 
-const Spinner = React.memo(function Spinner({ color }) {
+const Spinner = React.memo(function Spinner({ color }: { color: string }) {
   return (
     <div style={{textAlign:"center",padding:"40px 0"}}>
       <div style={{width:"36px",height:"36px",borderRadius:"50%",margin:"0 auto 14px",
@@ -551,7 +551,7 @@ const NavButton = React.memo(function NavButton({ index, isActive, isAnswered, p
   );
 });
 
-function TextInput({ value, onChange, tc, disabled=false }) {
+function TextInput({ value, onChange, tc, disabled = false }: any) {
   // 1. เก็บค่าที่กำลังพิมพ์ไว้ใน Local state
   const [localValue, setLocalValue] = useState(value || "");
 
@@ -610,7 +610,7 @@ function TextInput({ value, onChange, tc, disabled=false }) {
 }
 
 // ── โจทย์กล่อง — ใช้ QuestionText (รองรับ Markdown) ────────
-const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
+const QuestionBox = React.memo(function QuestionBox({ q, current, tc }: any) {
   return (
     <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
       padding:"10px",marginBottom:"16px",minHeight:"180px",
@@ -632,7 +632,7 @@ const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
 
 // ── เฉลย — ใช้ MdText ────────────────────────────────────
 // ── เฉลย — รองรับ solutionText + links ──────────────────
-function AnswerRow({ r, i, tc }) {
+function AnswerRow({ r, i, tc }: any) {
   const pts = r.question.points ?? 1;
   let correctText, selectedText;
   if (r.question.questionType === "text") {
@@ -737,7 +737,7 @@ const TimerDisplay = React.memo(({ initialTime, tc, onTimeUp }: any) => {
   );
 });
 
-function QuizScreen({ set, student, questions, onFinish, theme }) {
+function QuizScreen({ set, student, questions, onFinish, theme }: any) {
   const [current,setCurrent]=useState(0);
   const [answers,setAnswers]=useState({});
   
@@ -874,7 +874,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }) {
   );
 }
 
-function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }) {
+function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }: any) {
   const {results,timeUsed,timeUp,student,set,maxScore}=data;
   const totalScore=calcTotalScore(results);
   const passed=totalScore>=set.passingScore;
