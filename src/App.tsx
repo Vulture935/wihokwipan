@@ -179,7 +179,15 @@ const Particles = React.memo(function Particles({ color }) {
   );
 });
 
-const TimerBar = React.memo(function TimerBar({ timeLeft, totalTime, color }) {
+const TimerBar = React.memo(function TimerBar({ 
+  timeLeft, 
+  totalTime, 
+  color 
+}: { 
+  timeLeft: number; 
+  totalTime: number; 
+  color: string; 
+}) {
   const pct=(timeLeft/totalTime)*100;
   const c=pct>50?color:pct>20?"#e67e22":"#e74c3c";
   return (
