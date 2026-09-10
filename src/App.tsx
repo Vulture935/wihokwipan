@@ -262,8 +262,7 @@ function CharacterPopup({ charData, status, onClose, tc }) {
     </div>
   );
 }
-
-const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
+const LifeHearts = React.memo(function LifeHearts({ total, remaining }: { total: number; remaining: number }) {
   return (
     <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
       {[...Array(total)].map((_,i)=>(
