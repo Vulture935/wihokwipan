@@ -163,7 +163,7 @@ function pickChallengeQuestion(pool, usedIds) {
   return available[Math.floor(Math.random()*available.length)];
 }
 
-const Particles = React.memo(function Particles({ color }: { color: string }) {
+const Particles = React.memo(function Particles({ color }: any) { color: string }) {
   const pts=useRef([...Array(18)].map(()=>({
     w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
     d:Math.random()*8+6,delay:Math.random()*6,
@@ -263,7 +263,7 @@ function CharacterPopup({ charData, status, onClose, tc }) {
   );
 }
 
-const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
+const LifeHearts = React.memo(function LifeHearts({ total, remaining }: any) {
   return (
     <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
       {[...Array(total)].map((_,i)=>(
@@ -274,9 +274,9 @@ const LifeHearts = React.memo(function LifeHearts({ total, remaining }) {
       ))}
     </div>
   );
-}
+});
 
-const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }) {
+const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoji, size=52 }: any) {
   if (logoImageUrl) {
     return (
       <div style={{width:size+"px",height:size+"px",borderRadius:"50%",overflow:"hidden",
@@ -289,7 +289,7 @@ const ChallengeLogo = React.memo(function ChallengeLogo({ logoImageUrl, logoEmoj
     );
   }
   return <div style={{fontSize:size+"px",textAlign:"center",lineHeight:1}}>{logoEmoji||"⚡"}</div>;
-}
+});
 
 function SetSelectScreen({ quizSets, onSelect, theme }: any) {
   const [search,setSearch]=useState("");
@@ -610,7 +610,7 @@ function TextInput({ value, onChange, tc, disabled=false }) {
 }
 
 // ── โจทย์กล่อง — ใช้ QuestionText (รองรับ Markdown) ────────
-const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
+const QuestionBox = React.memo(function QuestionBox({ q, current, tc }: any) {
   return (
     <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
       padding:"10px",marginBottom:"16px",minHeight:"180px",
@@ -628,7 +628,7 @@ const QuestionBox = React.memo(function QuestionBox({ q, current, tc }) {
       )}
     </div>
   );
-}
+});
 
 // ── เฉลย — ใช้ MdText ────────────────────────────────────
 // ── เฉลย — รองรับ solutionText + links ──────────────────
