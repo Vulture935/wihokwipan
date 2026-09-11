@@ -299,9 +299,13 @@ const ChallengeLogo = React.memo(function ChallengeLogo({
 });
 
 function SetSelectScreen({ quizSets, onSelect, theme }: any) {
-  const [search,setSearch]=useState("");
-  const filtered = quizSets.filter((s: any) => s.name.includes(search) || s.id.includes(search));
-  const tc=theme.themeColor;
+  const [search, setSearch] = useState("");
+  const isLoading = quizSets.length === 0;
+  const filtered = quizSets.filter((s: any) =>
+    s.name.includes(search) || s.id.includes(search)
+  );
+  const tc = theme.themeColor;
+
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
       <div style={{maxWidth:"560px",width:"100%",
@@ -312,28 +316,70 @@ function SetSelectScreen({ quizSets, onSelect, theme }: any) {
           <div style={{fontSize:"44px",marginBottom:"8px"}}>{theme.logoEmoji}</div>
           <h1 style={{fontFamily:"'Cinzel Decorative',serif",color:tc,fontSize:theme.fontSize,
             margin:"0 0 4px",textShadow:`0 0 20px ${tc}44`}}>ลุยโจทย์</h1>
-          <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",margin:0}}>Admin — เลือกชุดข้อสอบ</p>
+          <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",margin:0}}>
+            Admin — เลือกชุดข้อสอบ
+          </p>
         </div>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 ค้นหา..."
-          style={{width:"100%",boxSizing:"border-box",background:`${tc}11`,border:`1px solid ${tc}44`,
-            borderRadius:"8px",padding:"10px 14px",color:"#f5e6c8",
-            fontFamily:"'Sarabun',sans-serif",fontSize:"15px",outline:"none",marginBottom:"14px"}}/>
-        
-        {filtered.length === 0 ? (
-          <Spinner color={tc}/>
+
+        {/* Search bar — แสดงทันที */}
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="🔍 ค้นหา..." disabled={isLoading}
+          style={{width:"100%",boxSizing:"border-box",background:`${tc}11`,
+            border:`1px solid ${tc}44`,borderRadius:"8px",padding:"10px 14px",
+            color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",
+            outline:"none",marginBottom:"14px",
+            opacity:isLoading?0.5:1}}/>
+
+        {/* Skeleton loading ขณะรอ API */}
+        {isLoading ? (
+          <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+            {[...Array(6)].map((_,i)=>(
+              <div key={i} style={{
+                background:`${tc}06`,border:`1px solid ${tc}22`,
+                borderRadius:"10px",padding:"13px 16px",
+                animation:`skeletonPulse 1.5s ease-in-out ${i*0.1}s infinite`,
+              }}>
+                {/* ชื่อชุดข้อสอบ */}
+                <div style={{height:"16px",width:`${70+Math.random()*20}%`,
+                  background:`${tc}22`,borderRadius:"4px",marginBottom:"8px"}}/>
+                {/* รายละเอียด */}
+                <div style={{height:"11px",width:"50%",
+                  background:`${tc}11`,borderRadius:"4px",marginBottom:"6px"}}/>
+                {/* URL */}
+                <div style={{height:"10px",width:"30%",
+                  background:"rgba(58,106,58,.2)",borderRadius:"4px"}}/>
+              </div>
+            ))}
+            <p style={{textAlign:"center",color:"#6b5a3e",fontSize:"12px",
+              fontFamily:"'Cinzel',serif",marginTop:"8px"}}>
+              กำลังโหลดชุดข้อสอบ...
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p style={{textAlign:"center",color:"#6b5a3e",fontFamily:"'Cinzel',serif",
+            fontSize:"13px",padding:"20px 0"}}>
+            ไม่พบชุดข้อสอบที่ค้นหา
+          </p>
         ) : (
-          <div style={{display:"flex",flexDirection:"column",gap:"8px",maxHeight:"400px",overflowY:"auto"}}>
-            {filtered.map((set: any)=>(
+          <div style={{display:"flex",flexDirection:"column",gap:"8px",
+            maxHeight:"400px",overflowY:"auto"}}>
+            {filtered.map((set: any) => (
               <button key={set.id} onClick={()=>onSelect(set)} style={{
                 background:`${tc}08`,border:`1px solid ${tc}33`,borderRadius:"10px",
                 padding:"13px 16px",cursor:"pointer",textAlign:"left",
-                display:"flex",justifyContent:"space-between",alignItems:"center",transition:"all .2s"}}>
+                display:"flex",justifyContent:"space-between",alignItems:"center",
+                transition:"all .2s"}}>
                 <div>
-                  <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",fontWeight:600}}>{set.name}</div>
-                  <div style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>
+                  <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
+                    fontSize:"15px",fontWeight:600}}>{set.name}</div>
+                  <div style={{color:"#6b5a3e",fontSize:"12px",
+                    fontFamily:"'Cinzel',serif",marginTop:"2px"}}>
                     {set.id} · {set.total}ข้อ · {set.timeLimit/60}นาที · ผ่าน {set.passingScore} คะแนน
                   </div>
-                  <div style={{color:"#3a6a3a",fontSize:"11px",fontFamily:"'Courier New',monospace",marginTop:"3px"}}>?set={set.id}</div>
+                  <div style={{color:"#3a6a3a",fontSize:"11px",
+                    fontFamily:"'Courier New',monospace",marginTop:"3px"}}>
+                    ?set={set.id}
+                  </div>
                 </div>
                 <span style={{color:tc,fontSize:"22px"}}>›</span>
               </button>
@@ -1749,18 +1795,17 @@ export default function App() {
   const setFromUrl = React.useMemo(() => getSetFromUrl(), []);
 
   // ── โหลด QuizSets + Config + Set พร้อมกันใน 1 useEffect ──
+  // แสดงหน้า setSelect ทันทีก่อน แล้วโหลด data ทีหลัง
   useEffect(() => {
     const setId = setFromUrl;
 
     if (setId) {
-      // มี ?set= → โหลด config + quizSets พร้อมกัน
       Promise.all([
         apiGet({ action: "getConfig", setId }),
         isChallenge ? Promise.resolve({ sets: [] }) : apiGet({ action: "getQuizSets" }),
       ]).then(([cfgData, setsData]) => {
         if (cfgData.config) { setTheme(buildTheme(cfgData.config)); setCachedConfig(cfgData.config); }
         if (setsData.sets?.length) setQuizSets(setsData.sets);
-
         if (isChallenge) {
           setSet({ id: setId, name: setId, total: 0, passingScore: 0, timeLimit: 0 });
           setScreen("login");
@@ -1772,11 +1817,12 @@ export default function App() {
         }
       }).catch(() => setScreen("setSelect"));
     } else {
-      // ไม่มี ?set= → โหลด quizSets อย่างเดียว
+      // ✅ แสดงหน้า setSelect ทันที ไม่รอ API
+      setScreen("setSelect");
+      // โหลด quizSets ใน background
       apiGet({ action: "getQuizSets" })
-        .then(data => { if (data.sets?.length) setQuizSets(data.sets); })
-        .catch(() => {})
-        .finally(() => setScreen("setSelect"));
+        .then((data: any) => { if (data.sets?.length) setQuizSets(data.sets); })
+        .catch(() => {});
     }
   }, []);
  // ── 1) โหลดข้อสอบโหมดปกติ (รองรับ Prefetch) ──────────────────
@@ -1870,6 +1916,7 @@ export default function App() {
         @keyframes pspin{to{transform:rotate(360deg)}}
         @keyframes heartshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
         @keyframes dmgFloat{0%{transform:translateX(-50%) translateY(0);opacity:1}100%{transform:translateX(-50%) translateY(-60px);opacity:0}}
+        @keyframes skeletonPulse{0%,100%{opacity:.4}50%{opacity:.8}}
         input:focus{border-color:${tc}99!important;box-shadow:0 0 0 2px ${tc}22;}
         button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
         button{transition:all .18s;}
