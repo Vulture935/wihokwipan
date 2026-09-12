@@ -401,6 +401,7 @@ function LoginScreen({
   challengeLabel,
   cachedConfig, 
   prefetchedQuestionsRef, 
+  playerStatsPrefetchRef,
   apiGet,
   onConfirm,
   onBack
@@ -442,6 +443,13 @@ const lookup=async()=>{
         ]).then(results => {
           prefetchedQuestionsRef.current = results;
         }).catch(() => {});
+      }
+      // ⚡ Boss/Challenge mode: prefetch playerStats ทันทีที่รู้ studentId
+      // (bundle ชุดคำถาม/บอส/config เริ่มโหลดไปตั้งแต่เปิดหน้านี้แล้ว)
+      if (isChallenge && playerStatsPrefetchRef) {
+        playerStatsPrefetchRef.current = apiGet({
+          action: "getPlayerStats", studentId: data.student.id,
+        }).catch(() => null);
       }
     }
   } catch { 
@@ -1789,6 +1797,8 @@ export default function App() {
   const [activeBoss,   setActiveBoss]   = useState<any>(null);   // Boss Mode
   const [playerStats,  setPlayerStats]  = useState<any>(null);   // Boss Mode
   const prefetchedQuestionsRef = useRef<any>(null);
+  const challengeBundleRef     = useRef<any>(null); // ⚡ prefetch bundle (config+boss+questions)
+  const playerStatsPrefetchRef = useRef<any>(null); // ⚡ prefetch playerStats หลังรู้ studentId
   const isDirectLink=!!getSetFromUrl();
   const isChallenge = mode === "challenge";
   // ── useMemo สำหรับค่าที่คำนวณซ้ำ ──────────────────────────
@@ -1798,6 +1808,13 @@ export default function App() {
   // แสดงหน้า setSelect ทันทีก่อน แล้วโหลด data ทีหลัง
   useEffect(() => {
     const setId = setFromUrl;
+
+    // ⚡ Boss/Challenge Mode: เริ่ม prefetch bundle ทันทีที่รู้ setId
+    // ไม่ต้องรอ student กรอกรหัสเลย เพราะ config/boss/questions ไม่ต้องใช้ studentId
+    if (setId && isChallenge) {
+      challengeBundleRef.current = apiGet({ action: "getChallengeBundle", setId })
+        .catch(() => null);
+    }
 
     if (setId) {
       Promise.all([
@@ -1868,20 +1885,32 @@ export default function App() {
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
     setLoadError("");
-    apiGet({
-      action:    "getChallengeBundle",
-      setId:     selectedSet.id,
-      studentId: student.id,
-    }).then((data: any) => {
-      if (data.error) { setLoadError(data.error); return; }
-      setChallengeConfig(data.challengeConfig);
-      setActiveBoss(data.boss   || null);
-      setPlayerStats(data.playerStats || null);
-      const pool = shuffle(data.questions || []);
-      if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
-      setChallengePool(pool);
-      setScreen("challenge");
-    }).catch(() => setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"));
+    (async () => {
+      try {
+        // ⚡ ใช้ค่าที่ prefetch ไว้แล้วถ้ามี ไม่งั้นค่อย fetch ใหม่ (fallback)
+        const bundlePromise = challengeBundleRef.current
+          ?? apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
+        const statsPromise = playerStatsPrefetchRef.current
+          ?? apiGet({ action: "getPlayerStats", studentId: student.id });
+
+        const [data, statsData] = await Promise.all([bundlePromise, statsPromise]);
+
+        challengeBundleRef.current     = null; // ล้าง cache หลังใช้
+        playerStatsPrefetchRef.current = null;
+
+        if (data.error) { setLoadError(data.error); return; }
+        setChallengeConfig(data.challengeConfig);
+        setActiveBoss(data.boss || null);
+        // ใช้ playerStats จาก call แยก (สดกว่า) ถ้ามี ไม่งั้น fallback เป็นของ bundle
+        setPlayerStats(statsData?.stats || data.playerStats || null);
+        const pool = shuffle(data.questions || []);
+        if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
+        setChallengePool(pool);
+        setScreen("challenge");
+      } catch {
+        setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+      }
+    })();
   }, [screen]);
   
   const goHome = useCallback(() => {
@@ -1952,6 +1981,7 @@ export default function App() {
     challengeLabel={challengeConfig?.challengeName}
     cachedConfig={cachedConfig}
     prefetchedQuestionsRef={prefetchedQuestionsRef}
+    playerStatsPrefetchRef={playerStatsPrefetchRef}
     apiGet={apiGet}
     onConfirm={st=>{ setStudent(st); setScreen("loading"); }}
     onBack={()=>{ setSet(null); setScreen("setSelect"); }}
