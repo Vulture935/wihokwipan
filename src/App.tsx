@@ -1,2030 +1,1239 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
-
-// ── Lazy load Markdown+KaTeX เฉพาะตอนที่ต้องใช้จริง ────────
-// ลด bundle size ~280KB ที่โหลดตอนเปิดหน้าแรก
-let ReactMarkdown: any = null;
-let remarkMathPlugin: any = null;
-let rehypeKatexPlugin: any = null;
-let katexLoaded = false;
-
-async function loadMarkdownLibs() {
-  if (katexLoaded) return;
-  const [md, rm, rk] = await Promise.all([
-    import("react-markdown"),
-    import("remark-math"),
-    import("rehype-katex"),
-  ]);
-  // โหลด KaTeX CSS
-  if (!document.getElementById("katex-css")) {
-    const link = document.createElement("link");
-    link.id   = "katex-css";
-    link.rel  = "stylesheet";
-    link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css";
-    document.head.appendChild(link);
-  }
-  ReactMarkdown      = md.default;
-  remarkMathPlugin   = rm.default;
-  rehypeKatexPlugin  = rk.default;
-  katexLoaded = true;
-}
-
 // ============================================================
-// MARKDOWN RENDERER — Lazy load KaTeX เฉพาะตอนใช้จริง
-// ============================================================
-const MdText = React.memo(function MdText({
-  children,
-  style = {},
-}: {
-  children?: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  const [ready, setReady] = useState(katexLoaded);
-
-  useEffect(() => {
-    if (!katexLoaded) {
-      loadMarkdownLibs().then(() => setReady(true));
-    }
-  }, []);
-
-  if (!children) return null;
-  if (!ready || !ReactMarkdown) {
-    // fallback ก่อน KaTeX โหลดเสร็จ
-    return <span style={{ display: "inline-block", ...style }}>{String(children)}</span>;
-  }
-  return (
-    <span style={{ display: "inline-block", ...style }}>
-      <ReactMarkdown
-        remarkPlugins={[remarkMathPlugin]}
-        rehypePlugins={[rehypeKatexPlugin]}
-        components={{
-          p: ({ node, ...props }: any) => <span {...props} />,
-        }}
-      >
-        {String(children)}
-      </ReactMarkdown>
-    </span>
-  );
-});
-
-// โจทย์ข้อความ (ใช้ MdText)
-function QuestionText({ text }: { text?: string }) {
-  if (!text) return null;
-  return (
-    <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",
-      textAlign:"center",margin:0,lineHeight:1.8}}>
-      <MdText>{text}</MdText>
-    </p>
-  );
-}
-
+// APPS SCRIPT v7 — Patch 3.0 Boss Mode + Patch 4.0 Artifacts
 // ============================================================
 
-const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbwtjTq25C0pURGGNsPMJ76iAbpzM3R9awJmswQUsQb1NrEG790gZc-_gsvPoXOTcCab/exec";
+const SPREADSHEET_ID = "1TdOOHQ4g_maj7pkwFS_5GyUusMg99oFoZxV16mKvVFA";
 
-const LOOKER_STUDIO_URL =
-  "https://datastudio.google.com/reporting/c1d52161-5387-4f00-bcda-b70b54116fc5/page/p_h1rlukz72d";
+// ============================================================
+// CACHE HELPERS — ใช้ CacheService ลด Sheets read
+// TTL: 300 วินาที (5 นาที) สำหรับข้อมูลที่ไม่ค่อยเปลี่ยน
+// ============================================================
+const CACHE_TTL = 300;
 
-const DEFAULT_THEME = {
-  logoEmoji:"⚔", themeColor:"#d4af37", fontSize:"22px",
-  bgColor:"#0d0803", bgImageUrl:"",
-};
-
-function getSetFromUrl() {
-  try { return new URLSearchParams(window.location.search).get("set") || null; }
-  catch { return null; }
-}
-function getModeFromUrl() {
-  try { return new URLSearchParams(window.location.search).get("mode") || "normal"; }
-  catch { return "normal"; }
-}
-
-async function apiGet(params) {
-  const query = new URLSearchParams(
-    Object.entries(params).reduce((acc,[k,v])=>{ acc[k]=String(v); return acc; },{})
-  );
-  const res = await fetch(`${APPS_SCRIPT_URL}?${query}`);
-  return res.json();
-}
-async function apiPost(body) {
-  const res = await fetch(APPS_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) });
-  return res.json();
-}
-
-function shuffle(arr) {
-  const a=[...arr];
-  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
-  return a;
-}
-function selectQuestions(questions, count) {
-  const groups: Record<string, any[]> = {};
-  questions.forEach(q=>{ if(!groups[q.groupId]) groups[q.groupId]=[]; groups[q.groupId].push(q); });
-  return shuffle(Object.values(groups).map((g: any) => g[Math.floor(Math.random()*g.length)])).slice(0,count);
-}
-function orderQuestions(questions, count) {
-  const groups={}, order=[];
-  questions.forEach(q=>{ if(!groups[q.groupId]){groups[q.groupId]=[];order.push(q.groupId);} groups[q.groupId].push(q); });
-  return order.map(gid=>{ const g=groups[gid]; return g[Math.floor(Math.random()*g.length)]; }).slice(0,count);
-}
-function formatTime(s) {
-  return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`;
-}
-function buildTheme(cfg) {
-  if(!cfg) return DEFAULT_THEME;
-  return {...DEFAULT_THEME,...cfg};
-}
-function calcTotalScore(results) {
-  return results.reduce((sum,r)=>sum+(r.isCorrect?(r.question.points??1):0),0);
-}
-function calcMaxScore(questions) {
-  return questions.reduce((sum,q)=>sum+(q.points??1),0);
-}
-function normalizeNumber(str) {
-  if(!str && str!==0) return null;
-  const s=String(str).trim().replace(/,/g,".");
-  const n=parseFloat(s);
-  return isNaN(n)?null:n;
-}
-function checkTextAnswer(userInput, correctAnswer) {
-  const u=normalizeNumber(userInput), c=normalizeNumber(correctAnswer);
-  if(u!==null&&c!==null) return u===c;
-  return String(userInput).trim().toLowerCase()===String(correctAnswer).trim().toLowerCase();
-}
-function getFastImageUrl(fileId) {
-  if(!fileId) return "";
-  let id=String(fileId).trim();
-  if(id.includes("/d/")) id=id.split("/d/")[1].split("/")[0];
-  else if(id.includes("id=")) id=id.split("id=")[1].split("&")[0];
-  return `https://lh3.googleusercontent.com/d/${id}`;
-}
-function pickChallengeQuestion(pool, usedIds) {
-  const available=pool.filter(q=>!usedIds.has(q.id));
-  if(!available.length) return null;
-  return available[Math.floor(Math.random()*available.length)];
-}
-
-const Particles = React.memo(function Particles({ color }: { color: string }) {
-  const pts=useRef([...Array(18)].map(()=>({
-    w:Math.random()*2.5+0.5,l:Math.random()*100,t:Math.random()*100,
-    d:Math.random()*8+6,delay:Math.random()*6,
-  }))).current;
-  return (
-    <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-      {pts.map((p,i)=>(
-        <div key={i} style={{position:"absolute",width:p.w+"px",height:p.w+"px",borderRadius:"50%",
-          background:color+"55",left:p.l+"%",top:p.t+"%",
-          animation:`pfloat ${p.d}s ease-in-out ${p.delay}s infinite`}}/>
-      ))}
-    </div>
-  );
-});
-
-const TimerBar = React.memo(function TimerBar({ timeLeft, totalTime, color }: { timeLeft: number; totalTime: number; color: string }) {
-  const pct=(timeLeft/totalTime)*100;
-  const c=pct>50?color:pct>20?"#e67e22":"#e74c3c";
-  return (
-    <div style={{width:"100%",height:"5px",background:"rgba(255,255,255,0.08)",borderRadius:"3px",overflow:"hidden"}}>
-      <div style={{height:"100%",width:pct+"%",background:c,borderRadius:"3px",
-        transition:"width 1s linear,background .5s",boxShadow:`0 0 6px ${c}`}}/>
-    </div>
-  );
-});
-
-const Spinner = React.memo(function Spinner({ color }: { color: string }) {
-  return (
-    <div style={{textAlign:"center",padding:"40px 0"}}>
-      <div style={{width:"36px",height:"36px",borderRadius:"50%",margin:"0 auto 14px",
-        border:`3px solid ${color}33`,borderTopColor:color,animation:"pspin .8s linear infinite"}}/>
-      <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px"}}>กำลังโหลด...</p>
-    </div>
-  );
-});
-
-const PointsBadge = React.memo(function PointsBadge({ points, tc }: any) {
-  if(!points||points===1) return null;
-  return (
-    <span style={{background:`linear-gradient(135deg,${tc}33,${tc}11)`,border:`1px solid ${tc}66`,
-      borderRadius:"20px",padding:"3px 12px",fontSize:"12px",color:tc,
-      fontFamily:"'Cinzel',serif",fontWeight:700,boxShadow:`0 0 8px ${tc}33`}}>
-      ★ {points} คะแนน
-    </span>
-  );
-});
-
-function CharacterPopup({ charData, status, onClose, tc }) {
-  const [visible,setVisible]=useState(false);
-  const [closing,setClosing]=useState(false);
-  useEffect(()=>{ const t=setTimeout(()=>setVisible(true),300); return()=>clearTimeout(t); },[]);
-  const handleClose=()=>{ setClosing(true); setTimeout(()=>onClose(),400); };
-  if(!charData) return null;
-  let imageId="", message="";
-  if(status==="perfect"){ imageId=charData.perfectImageId||charData.passImageId||""; message=charData.perfectMsg||"เยี่ยมมาก! ได้เต็มทุกข้อ! 🌟"; }
-  else if(status==="pass"){ imageId=charData.passImageId||""; message=charData.passMsg||"ผ่านแล้ว! ยอดเยี่ยม! 🎉"; }
-  else { imageId=charData.failImageId||""; message=charData.failMsg||"ยังไม่ผ่าน สู้ต่อไปนะ! 💪"; }
-  const imageUrl=getFastImageUrl(imageId);
-  const statusColor=status==="perfect"?"#f1c40f":status==="pass"?"#27ae60":"#e74c3c";
-  const statusGlow=status==="perfect"?"rgba(241,196,15,0.6)":status==="pass"?"rgba(39,174,96,0.5)":"rgba(231,76,60,0.4)";
-  return (
-    <div onClick={handleClose} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.75)",
-      backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px",
-      opacity:visible&&!closing?1:0,transition:"opacity 0.4s ease",cursor:"pointer"}}>
-      <div onClick={e=>e.stopPropagation()} style={{maxWidth:"360px",width:"100%",
-        background:"linear-gradient(160deg,rgba(20,12,5,.98),rgba(38,22,8,.98))",
-        border:`2px solid ${statusColor}66`,borderRadius:"20px",padding:"28px 24px 24px",
-        boxShadow:`0 0 60px ${statusGlow},0 20px 60px rgba(0,0,0,.9)`,position:"relative",
-        transform:visible&&!closing?"translateY(0) scale(1)":"translateY(60px) scale(0.85)",
-        opacity:visible&&!closing?1:0,
-        transition:"transform 0.5s cubic-bezier(0.34,1.56,0.64,1),opacity 0.4s ease",
-        textAlign:"center",cursor:"default"}}>
-        <button onClick={handleClose} style={{position:"absolute",top:"12px",right:"14px",
-          background:"none",border:"none",color:"#6b5a3e",fontSize:"20px",cursor:"pointer",lineHeight:1,padding:"4px"}}>×</button>
-        <div style={{display:"inline-block",background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
-          border:`1px solid ${statusColor}66`,borderRadius:"20px",padding:"4px 16px",
-          fontSize:"12px",color:statusColor,fontFamily:"'Cinzel',serif",fontWeight:700,marginBottom:"16px",
-          boxShadow:`0 0 12px ${statusColor}44`}}>
-          {status==="perfect"?"★ ได้เต็ม!":status==="pass"?"✓ ผ่านแล้ว!":"✗ ยังไม่ผ่าน"}
-        </div>
-        {imageUrl&&(
-          <div style={{margin:"0 auto 16px",width:"200px",height:"200px",borderRadius:"16px",
-            overflow:"hidden",border:`2px solid ${statusColor}44`,boxShadow:`0 0 30px ${statusColor}33`,
-            background:"rgba(0,0,0,0.3)"}}>
-            <img src={imageUrl} alt="character" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
-              onError={e=>{(e.target as HTMLImageElement).style.display="none";}}/>
-          </div>
-        )}
-        <p style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"18px",lineHeight:1.6,
-          margin:"0 0 20px",textShadow:`0 0 10px ${statusColor}44`}}>{message}</p>
-        <button onClick={handleClose} style={{width:"100%",padding:"12px",
-          background:`linear-gradient(135deg,${statusColor}33,${statusColor}11)`,
-          border:`1px solid ${statusColor}55`,borderRadius:"10px",color:statusColor,
-          fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>ดูผลลัพธ์</button>
-      </div>
-    </div>
-  );
-}
-const LifeHearts = React.memo(function LifeHearts({ total, remaining }: { total: number; remaining: number }) {
-  return (
-    <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
-      {[...Array(total)].map((_,i)=>(
-        <span key={i} style={{fontSize:"16px",
-          filter:i<remaining?"none":"grayscale(1) opacity(0.2)",
-          transition:"filter 0.3s, transform 0.3s",display:"inline-block",
-          transform:i<remaining?"scale(1)":"scale(0.75)"}}>❤️</span>
-      ))}
-    </div>
-  );
-});
-
-const ChallengeLogo = React.memo(function ChallengeLogo({ 
-  logoImageUrl, 
-  logoEmoji, 
-  size = 52 
-}: { 
-  logoImageUrl?: string; 
-  logoEmoji?: string; 
-  size?: number; 
-}) {
-  if (logoImageUrl) {
-    return (
-      <div style={{width:size+"px",height:size+"px",borderRadius:"50%",overflow:"hidden",
-        margin:"0 auto",border:"2px solid rgba(231,76,60,.5)",
-        boxShadow:"0 0 20px rgba(231,76,60,.4)",background:"rgba(0,0,0,0.3)"}}>
-        <img src={logoImageUrl} alt="logo"
-          style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
-          onError={e=>{ const t=e.target as any; t.style.display="none"; t.parentNode.innerHTML=logoEmoji||"⚡"; }}/>
-      </div>
-    );
-  }
-  return <div style={{fontSize:size+"px",textAlign:"center",lineHeight:1}}>{logoEmoji||"⚡"}</div>;
-});
-
-function SetSelectScreen({ quizSets, onSelect, theme }: any) {
-  const [search, setSearch] = useState("");
-  const isLoading = quizSets.length === 0;
-  const filtered = quizSets.filter((s: any) =>
-    s.name.includes(search) || s.id.includes(search)
-  );
-  const tc = theme.themeColor;
-
-  return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
-      <div style={{maxWidth:"560px",width:"100%",
-        background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${tc}55`,borderRadius:"16px",padding:"32px 28px",
-        boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
-        <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{fontSize:"44px",marginBottom:"8px"}}>{theme.logoEmoji}</div>
-          <h1 style={{fontFamily:"'Cinzel Decorative',serif",color:tc,fontSize:theme.fontSize,
-            margin:"0 0 4px",textShadow:`0 0 20px ${tc}44`}}>ลุยโจทย์</h1>
-          <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",margin:0}}>
-            Admin — เลือกชุดข้อสอบ
-          </p>
-        </div>
-
-        {/* Search bar — แสดงทันที */}
-        <input value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder="🔍 ค้นหา..." disabled={isLoading}
-          style={{width:"100%",boxSizing:"border-box",background:`${tc}11`,
-            border:`1px solid ${tc}44`,borderRadius:"8px",padding:"10px 14px",
-            color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"15px",
-            outline:"none",marginBottom:"14px",
-            opacity:isLoading?0.5:1}}/>
-
-        {/* Skeleton loading ขณะรอ API */}
-        {isLoading ? (
-          <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-            {[...Array(6)].map((_,i)=>(
-              <div key={i} style={{
-                background:`${tc}06`,border:`1px solid ${tc}22`,
-                borderRadius:"10px",padding:"13px 16px",
-                animation:`skeletonPulse 1.5s ease-in-out ${i*0.1}s infinite`,
-              }}>
-                {/* ชื่อชุดข้อสอบ */}
-                <div style={{height:"16px",width:`${70+Math.random()*20}%`,
-                  background:`${tc}22`,borderRadius:"4px",marginBottom:"8px"}}/>
-                {/* รายละเอียด */}
-                <div style={{height:"11px",width:"50%",
-                  background:`${tc}11`,borderRadius:"4px",marginBottom:"6px"}}/>
-                {/* URL */}
-                <div style={{height:"10px",width:"30%",
-                  background:"rgba(58,106,58,.2)",borderRadius:"4px"}}/>
-              </div>
-            ))}
-            <p style={{textAlign:"center",color:"#6b5a3e",fontSize:"12px",
-              fontFamily:"'Cinzel',serif",marginTop:"8px"}}>
-              กำลังโหลดชุดข้อสอบ...
-            </p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <p style={{textAlign:"center",color:"#6b5a3e",fontFamily:"'Cinzel',serif",
-            fontSize:"13px",padding:"20px 0"}}>
-            ไม่พบชุดข้อสอบที่ค้นหา
-          </p>
-        ) : (
-          <div style={{display:"flex",flexDirection:"column",gap:"8px",
-            maxHeight:"400px",overflowY:"auto"}}>
-            {filtered.map((set: any) => (
-              <button key={set.id} onClick={()=>onSelect(set)} style={{
-                background:`${tc}08`,border:`1px solid ${tc}33`,borderRadius:"10px",
-                padding:"13px 16px",cursor:"pointer",textAlign:"left",
-                display:"flex",justifyContent:"space-between",alignItems:"center",
-                transition:"all .2s"}}>
-                <div>
-                  <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
-                    fontSize:"15px",fontWeight:600}}>{set.name}</div>
-                  <div style={{color:"#6b5a3e",fontSize:"12px",
-                    fontFamily:"'Cinzel',serif",marginTop:"2px"}}>
-                    {set.id} · {set.total}ข้อ · {set.timeLimit/60}นาที · ผ่าน {set.passingScore} คะแนน
-                  </div>
-                  <div style={{color:"#3a6a3a",fontSize:"11px",
-                    fontFamily:"'Courier New',monospace",marginTop:"3px"}}>
-                    ?set={set.id}
-                  </div>
-                </div>
-                <span style={{color:tc,fontSize:"22px"}}>›</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LoginScreen({ 
-  theme, 
-  set,
-  selectedSet, 
-  isChallenge, 
-  isDirectLink,
-  challengeConfig,
-  challengeLabel,
-  cachedConfig, 
-  prefetchedQuestionsRef, 
-  playerStatsPrefetchRef,
-  apiGet,
-  onConfirm,
-  onBack
-}: any) {
-  const [sid,setSid]=useState("");
-  const [student,setStudent]=useState(null);
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState("");
-// ⚡ Warm-up Apps Script ระหว่างรอกรอกรหัส (ช่วยลดอาการ Cold Start)
-  useEffect(() => {
-    let isCancelled = false;
-
-    apiGet({ action: "ping" })
-      .catch(() => {
-        // เงียบไว้หากเกิด Error ไม่ให้กระทบ UX ของผู้ใช้
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
-const tc=theme.themeColor;
-const lookup=async()=>{
-  if(!sid.trim()) return;
-  setLoading(true); setError(""); setStudent(null);
+function cacheGet(key) {
   try {
-    const data=await apiGet({ action:"getStudent", studentId:sid.trim() });
-    if(data.error) {
-      setError(data.error);
-    } else {
-      setStudent(data.student);
-      // ✅ เริ่ม prefetch ข้อสอบทันทีที่เจอนักเรียน (ไม่รอให้กด "ใช่คือฉัน")
-      if (!isChallenge && selectedSet?.id) {
-        Promise.all([
-          apiGet({ action: "getQuestions", setName: selectedSet.id }),
-          cachedConfig
-            ? Promise.resolve({ config: cachedConfig })
-            : apiGet({ action: "getConfig", setId: selectedSet.id }),
-        ]).then(results => {
-          prefetchedQuestionsRef.current = results;
-        }).catch(() => {});
-      }
-      // ⚡ Boss/Challenge mode: prefetch playerStats ทันทีที่รู้ studentId
-      // (bundle ชุดคำถาม/บอส/config เริ่มโหลดไปตั้งแต่เปิดหน้านี้แล้ว)
-      if (isChallenge && playerStatsPrefetchRef) {
-        playerStatsPrefetchRef.current = apiGet({
-          action: "getPlayerStats", studentId: data.student.id,
-        }).catch(() => null);
-      }
-    }
-  } catch { 
-    setError("เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่"); 
-  }
-  setLoading(false);
-};
-  return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
-      <div style={{maxWidth:"460px",width:"100%",
-        background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${isChallenge?"rgba(231,76,60,.4)":tc+"55"}`,borderRadius:"16px",padding:"32px 28px",
-        boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
-        {!isDirectLink&&(
-          <button onClick={onBack} style={{background:"none",border:"none",color:"#6b5a3e",
-            fontFamily:"'Cinzel',serif",fontSize:"12px",cursor:"pointer",marginBottom:"16px",padding:0}}>
-            ← เปลี่ยนชุดข้อสอบ
-          </button>
-        )}
-        <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{marginBottom:"10px"}}>
-            {isChallenge ? (
-              // ถ้า theme มี logoImageUrl (รูป Boss) → แสดงรูปใหญ่
-              theme.logoImageUrl ? (
-                <div style={{margin:"0 auto",width:"180px",height:"180px",
-                  borderRadius:"16px",overflow:"hidden",
-                  border:"2px solid rgba(231,76,60,.5)",
-                  boxShadow:"0 0 30px rgba(231,76,60,.4)",
-                  background:"rgba(0,0,0,0.3)"}}>
-                  <img src={theme.logoImageUrl} alt="boss"
-                    style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
-                    onError={(e: any) => e.currentTarget.style.display = "none"}/>
-                </div>
-              ) : (
-                <ChallengeLogo
-                  logoImageUrl={challengeConfig?.logoImageUrl || ""}
-                  logoEmoji={challengeConfig?.logoEmoji || theme.logoEmoji || "⚡"}
-                  size={52}/>
-              )
-            ) : (
-              <div style={{fontSize:"44px",lineHeight:1}}>{theme.logoEmoji}</div>
-            )}
-          </div>
-          <h1 style={{fontFamily:"'Cinzel Decorative',serif",
-            color:isChallenge?"#e74c3c":tc,fontSize:theme.fontSize,
-            margin:"0 0 4px",textShadow:`0 0 20px ${isChallenge?"rgba(231,76,60,.4)":tc+"44"}`}}>
-            {isChallenge?"Challenge Mode":"ลุยโจทย์"}
-          </h1>
-          <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",margin:0}}>
-            {isChallenge?(challengeLabel||set.id):`${set.id} · ${set.total}ข้อ · ผ่าน ${set.passingScore} คะแนน`}
-          </p>
-        </div>
-        <label style={{display:"block",color:"#8b7355",fontSize:"11px",
-          fontFamily:"'Cinzel',serif",letterSpacing:"1px",marginBottom:"6px"}}>รหัสนักเรียน</label>
-        <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
-          <input value={sid} onChange={e=>{setSid(e.target.value);setStudent(null);setError("");}}
-            onKeyDown={e=>e.key==="Enter"&&lookup()} placeholder="เช่น 691009" maxLength={10}
-            style={{flex:1,background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"8px",
-              padding:"11px 14px",color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",
-              fontSize:"16px",outline:"none",boxSizing:"border-box"}}/>
-          <button onClick={lookup} disabled={!sid.trim()||loading} style={{
-            padding:"0 18px",background:`${tc}22`,border:`1px solid ${tc}66`,borderRadius:"8px",
-            color:tc,fontFamily:"'Cinzel',serif",fontSize:"13px",
-            cursor:sid.trim()&&!loading?"pointer":"not-allowed",whiteSpace:"nowrap"}}>
-            {loading?"...":"ค้นหา"}
-          </button>
-        </div>
-        {loading&&<Spinner color={tc}/>}
-        {error&&(
-          <div style={{background:"rgba(231,76,60,.1)",border:"1px solid rgba(231,76,60,.4)",
-            borderRadius:"10px",padding:"14px",marginBottom:"16px",textAlign:"center",
-            color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",fontSize:"14px"}}>{error}</div>
-        )}
-        {student&&!loading&&(
-          <div style={{background:"rgba(39,174,96,.08)",border:"2px solid rgba(39,174,96,.4)",
-            borderRadius:"12px",padding:"20px",marginBottom:"8px"}}>
-            <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"11px",textAlign:"center",marginBottom:"12px"}}>พบข้อมูลนักเรียน</p>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:"28px",fontWeight:900,fontFamily:"'Cinzel',serif",color:tc}}>{student.nickname}</div>
-              <div style={{color:"#f5e6c8",fontFamily:"'Sarabun',sans-serif",fontSize:"16px",marginTop:"4px"}}>
-                {student.firstName} {student.lastName}
-              </div>
-            </div>
-            <div style={{marginTop:"16px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
-              <button onClick={()=>{setStudent(null);setSid("");}} style={{
-                background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"10px",
-                padding:"12px",color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
-                ไม่ใช่ฉัน
-              </button>
-              <button onClick={()=>onConfirm(student)} style={{
-                background:"linear-gradient(135deg,#1a4a1a,#27ae60,#1a4a1a)",border:"none",
-                borderRadius:"10px",padding:"12px",color:"#fff",
-                fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:700,cursor:"pointer"}}>
-                ใช่ คือฉัน! ✓
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    const val = CacheService.getScriptCache().get(key);
+    return val ? JSON.parse(val) : null;
+  } catch { return null; }
 }
 
-// ── MC Choices — รองรับ Markdown ในตัวเลือก ──────────────
-const McChoices = React.memo(function McChoices({ shuffled, selNow, onSelect, tc, disabled=false, correctOrigIndex=null, showAnswer=false }: any) {
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:"9px"}}>
-      {shuffled.map((choice: any, si: number)=>{
-        const sel=selNow===si;
-        const isCorrectChoice=showAnswer&&choice.origIndex===correctOrigIndex;
-        const isWrongSelected=showAnswer&&sel&&!isCorrectChoice;
-        let bg=sel?`${tc}22`:"rgba(255,255,255,.02)";
-        let border=sel?`2px solid ${tc}`:`1px solid ${tc}22`;
-        let color=sel?"#f5e6c8":"#a89070";
-        if(showAnswer){
-          if(isCorrectChoice){ bg="rgba(39,174,96,.15)"; border="2px solid rgba(39,174,96,.6)"; color="#27ae60"; }
-          else if(isWrongSelected){ bg="rgba(231,76,60,.12)"; border="2px solid rgba(231,76,60,.5)"; color="#e74c3c"; }
-          else { bg="rgba(255,255,255,.01)"; border=`1px solid ${tc}11`; color="#5a4a30"; }
-        }
-        return (
-          <button key={si} onClick={()=>!disabled&&onSelect(si)} disabled={disabled}
-            style={{background:bg,border,borderRadius:"10px",padding:"13px 16px",
-              color,fontFamily:"'Sarabun',sans-serif",fontSize:"16px",
-              cursor:disabled?"default":"pointer",textAlign:"left",
-              display:"flex",alignItems:"center",gap:"12px",transition:"all .15s",
-              boxShadow:sel&&!showAnswer?`0 3px 14px ${tc}33`:"none"}}>
-            <span style={{width:"28px",height:"28px",borderRadius:"50%",flexShrink:0,
-              background:showAnswer
-                ?(isCorrectChoice?"rgba(39,174,96,.3)":isWrongSelected?"rgba(231,76,60,.2)":"rgba(255,255,255,.03)")
-                :(sel?tc:`${tc}11`),
-              border:"none",display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:"12px",fontWeight:700,fontFamily:"'Cinzel',serif",
-              color:showAnswer?(isCorrectChoice?"#27ae60":isWrongSelected?"#e74c3c":"#4a3a20"):(sel?"#1a0e00":"#8b7355")}}>
-              {["ก","ข","ค","ง"][si]}
-            </span>
-            <span style={{flex:1}}><MdText>{choice.text}</MdText></span>
-            {showAnswer&&isCorrectChoice&&<span style={{fontSize:"14px"}}>✓</span>}
-            {showAnswer&&isWrongSelected&&<span style={{fontSize:"14px"}}>✗</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
-});
+function cacheSet(key, value) {
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(value), CACHE_TTL);
+  } catch {}
+}
 
-const NavButton = React.memo(function NavButton({ index, isActive, isAnswered, pts, questionType, tc, onPress }: any) {
-  const handlePress = () => onPress(index);
+function cacheRemove(key) {
+  try { CacheService.getScriptCache().remove(key); } catch {}
+}
 
-  return (
-    <div onClick={handlePress} style={{
-      minWidth:"24px",height:"24px",borderRadius:"5px",cursor:"pointer",padding:"0 3px",
-      background:isActive?tc:isAnswered?tc+"55":"rgba(255,255,255,.06)",
-      border:isActive?`2px solid ${tc}`:`1px solid ${tc}33`,
-      display:"flex",alignItems:"center",justifyContent:"center",
-      fontSize:"9px",fontWeight:700,color:isActive?"#1a0e00":"#8b7355",
-      transition:"all .15s",gap:"1px"}}>
-      {questionType==="text"?"✏":index+1}
-      {pts>1&&<span style={{fontSize:"8px",color:isActive?"#1a0e00":tc}}>×{pts}</span>}
-    </div>
-  );
-});
+// ล้าง cache ทั้งหมดที่เกี่ยวกับ Sheets (เรียกหลัง saveResult หรือแก้ข้อมูล)
+function clearAllCache() {
+  const keys = ["quizSets", "itemLibrary"];
+  CacheService.getScriptCache().removeAll(keys);
+}
 
-function TextInput({ value, onChange, tc, disabled = false }: any) {
-  // 1. เก็บค่าที่กำลังพิมพ์ไว้ใน Local state
-  const [localValue, setLocalValue] = useState(value || "");
+// ============================================================
+// ROUTER
+// ============================================================
+function doGet(e) {
+  const action = e.parameter.action;
+  try {
+    // ── เดิม ──────────────────────────────────────────────
+    if (action === "getQuestions")       return getQuestions(e.parameter.setName);
+    if (action === "getStudent")         return getStudent(e.parameter.studentId);
+    if (action === "getRareProgress")    return getRareProgress(e.parameter.studentId);
+    if (action === "getConfig")          return getConfig(e.parameter.setId);
+    if (action === "getCharacter")       return getCharacter(e.parameter.setId);
+    if (action === "getChallengeConfig") return getChallengeConfig(e.parameter.setId);
+    if (action === "getQuizSets")        return getQuizSets();
+    if (action === "ping")               return ok({ pong: true });
 
-  // 2. ถ้าย้ายข้อ (value จากแม่เปลี่ยน) ให้รีเซ็ตช่องพิมพ์ตามข้อนั้น
-  useEffect(() => {
-    setLocalValue(value || "");
-  }, [value]);
+    // ── Patch 3.0 Boss ────────────────────────────────────
+    if (action === "getActiveBoss")      return getActiveBoss(e.parameter.bossName);
+    if (action === "getBossLeaderboard") return getBossLeaderboard(e.parameter.bossName);
+    if (action === "getPlayerStats")     return getPlayerStats(e.parameter.studentId);
 
-  // 3. ฟังก์ชันอัปเดตไปที่คอมโพเนนต์แม่เมื่อพิมพ์เสร็จ
-  const handleSave = () => {
-    if (!disabled && localValue !== value) {
-      onChange(localValue);
+    // ── Bundle (โหลดทุกอย่างใน 1 call) ──────────────────
+    if (action === "getChallengeBundle") return getChallengeBundle(e.parameter.setId, e.parameter.studentId);
+
+    // ── Patch 4.0 Artifacts / Shop ─────────────────────────
+    if (action === "getPlayerInventory")   return getPlayerInventory(e.parameter.studentId);
+    if (action === "getItemLibrary")       return getItemLibrary();
+    if (action === "getUnlockConditions")  return getUnlockConditions(e.parameter.studentId);
+    if (action === "getShopBundle")        return getShopBundle(e.parameter.studentId);
+
+    return ok({ error: "Unknown action: " + action });
+  } catch(err) { return ok({ error: err.message }); }
+}
+
+// ============================================================
+// doPost — ทุก action ในนี้ "เขียน" ข้อมูลลง Sheet
+// ครอบด้วย LockService ทั้งหมดจุดเดียว กันข้อมูลชนกันตอนมีคน
+// เขียนพร้อมกัน (เช่น ตีบอสพร้อมกันหลายคน, ซื้อของพร้อมกัน,
+// ส่งผลสอบพร้อมกันตอนหมดเวลาคาบเรียน)
+//
+// ใช้ Script Lock เดียวครอบทั้งฟังก์ชัน เพื่อไม่ให้ซับซ้อนเรื่อง
+// lock ซ้อนกัน (เช่น claimArtifact เรียก grantArtifact ข้างใน)
+// รอคิวได้สูงสุด 10 วินาที ถ้ายังไม่ว่างจะแจ้ง error กลับไปแทน
+// การรอเงียบๆ จนกว่า Apps Script จะ timeout เอง
+// ============================================================
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(10000);
+  if (!gotLock) {
+    return ok({ error: "ระบบกำลังประมวลผลคำขออื่นอยู่ กรุณาลองใหม่อีกครั้ง" });
+  }
+
+  try {
+    const data = JSON.parse(e.postData.contents);
+    // ── เดิม ──────────────────────────────────────────────
+    if (data.action === "saveResult")        return saveResult(data);
+    if (data.action === "saveRareProgress")  return saveRareProgressSingle(data);
+
+    // ── Patch 3.0 Boss ────────────────────────────────────
+    if (data.action === "saveBossDamage")    return saveBossDamage(data);
+    // หมายเหตุ: รางวัลบอสแจกอัตโนมัติผ่าน _processBossRewards() ตอนบอสตาย
+    // ไม่ต้องมี action แยกสำหรับ claim boss reward
+
+    // ── Patch 4.0 Artifacts / Shop ─────────────────────────
+    if (data.action === "buyArtifact")       return buyArtifact(data);
+    if (data.action === "upgradeArtifact")   return upgradeArtifact(data);
+    if (data.action === "grantArtifact")     return grantArtifact(data); // ระบบแจก (boss/admin)
+    if (data.action === "claimArtifact")     return claimArtifact(data); // ผู้เล่นกดรับเอง
+    if (data.action === "setCompanion")      return setCompanion(data);  // ตั้งคู่หู
+
+    return ok({ error: "Unknown action: " + data.action });
+  } catch(err) {
+    return ok({ error: err.message });
+  } finally {
+    lock.releaseLock(); // ปล่อย lock เสมอ ไม่ว่าจะสำเร็จหรือ error (เรียกได้เพราะมั่นใจว่าถือ lock อยู่จริง)
+  }
+}
+
+// ============================================================
+// PATCH 3.0 — BOSS MODE
+// ============================================================
+
+// ── ดึงบอสที่ Active อยู่ตอนนี้ ──────────────────────────────
+//
+// Sheet "Boss":
+// A: Name  B: GifUrl  C: HP Max  D: DEF  E: HP คงเหลือ
+// F: Regen G: Status  H: Reward_Top1  I: Reward_Top2
+// J: Reward_Top3  K: Reward_Top4  L: Reward_Top5
+// M: Reward_Last  N: Reward_Most  O: ArtifactReward
+// P: ArtifactRecipient (Top1/Last/Most/All)
+//
+// ── ดึงบอสตามชื่อ (ถ้าไม่ส่งชื่อ → ดึงตัวแรกที่ Active) ──
+function getActiveBoss(bossName) {
+  const sheet = getSheet("Boss");
+  const rows  = sheet.getDataRange().getValues().slice(1);
+  const row   = bossName
+    ? rows.find(r =>
+        String(r[0]).trim() === String(bossName).trim() &&
+        String(r[6]).trim().toLowerCase() === "active")
+    : rows.find(r => String(r[6]).trim().toLowerCase() === "active");
+  if (!row) return ok({ boss: null });
+
+  return ok({
+    boss: {
+      name:        String(row[0]),
+      gifUrl:      row[1] ? getFastImageUrl(String(row[1])) : "",
+      hpMax:       Number(row[2]) || 0,
+      def:         Number(row[3]) || 0,
+      hpCurrent:   Number(row[4]) || 0,
+      regen:       Number(row[5]) || 0,
+      status:      String(row[6]),
+      rewards: {
+        top1: Number(row[7])  || 0,
+        top2: Number(row[8])  || 0,
+        top3: Number(row[9])  || 0,
+        top4: Number(row[10]) || 0,
+        top5: Number(row[11]) || 0,
+        last: Number(row[12]) || 0,
+        most: Number(row[13]) || 0,
+      },
+      artifactReward:     row[14] ? String(row[14]).trim() : "",
+      artifactRecipient:  row[15] ? String(row[15]).trim() : "",
     }
+  });
+}
+
+// ── บันทึก Damage ──────────────────────────────────────────
+//
+// Sheet "BossDamageLog":
+// A: Timestamp  B: BossName  C: StudentID  D: Nickname
+// E: Damage     F: QuestionID  G: SetName
+//
+// คำนวณใน Sheet:
+// - HP คงเหลือใน Boss = C(HP Max) - SUM ของ damage ทั้งหมดต่อบอสนั้น + regen
+// - ดูจาก BossDamageLog โดยใช้ SUMIF
+//
+function saveBossDamage(data) {
+  // data = { bossName, studentId, nickname, damage, questionId, setName }
+
+  // 1. บันทึก damage log
+  const logSheet = getOrCreateSheet("BossDamageLog", [
+    "Timestamp","BossName","StudentID","Nickname","Damage","QuestionID","SetName"
+  ]);
+  logSheet.appendRow([
+    new Date(),
+    data.bossName    || "",
+    data.studentId   || "",
+    data.nickname    || "",
+    data.damage      || 0,
+    data.questionId  || "",
+    data.setName     || "",
+  ]);
+
+  // 2. คำนวณ HP ปัจจุบันของบอส (จาก Sheet Boss)
+  const bossSheet = getSheet("Boss");
+  const bossRows  = bossSheet.getDataRange().getValues();
+  let bossRowIdx  = -1;
+  for (let i = 1; i < bossRows.length; i++) {
+    if (String(bossRows[i][0]).trim() === String(data.bossName).trim()) {
+      bossRowIdx = i; break;
+    }
+  }
+
+  if (bossRowIdx === -1) return ok({ success: false, error: "ไม่พบบอส" });
+
+  const hpMax     = Number(bossRows[bossRowIdx][2]) || 0;
+  const currentHp = Number(bossRows[bossRowIdx][4]) || 0;
+  const newHp     = Math.max(0, currentHp - (data.damage || 0));
+
+  // อัปเดต HP คงเหลือใน Sheet Boss (column E = index 4 → col 5)
+  bossSheet.getRange(bossRowIdx + 1, 5).setValue(newHp);
+
+  // 3. เช็คว่าบอสตายไหม
+  if (newHp <= 0) {
+    bossSheet.getRange(bossRowIdx + 1, 7).setValue("Dead");
+    // แจกรางวัล
+    _processBossRewards(data.bossName, bossRows[bossRowIdx]);
+    return ok({ success: true, bossDefeated: true, newHp: 0 });
+  }
+
+  return ok({ success: true, bossDefeated: false, newHp });
+}
+
+// ── คำนวณและแจกรางวัลเมื่อบอสตาย ──────────────────────────
+function _processBossRewards(bossName, bossRow) {
+  const rewards = {
+    top1: Number(bossRow[7])  || 0,
+    top2: Number(bossRow[8])  || 0,
+    top3: Number(bossRow[9])  || 0,
+    top4: Number(bossRow[10]) || 0,
+    top5: Number(bossRow[11]) || 0,
+    last: Number(bossRow[12]) || 0,
+    most: Number(bossRow[13]) || 0,
   };
+  const artifactReward    = bossRow[14] ? String(bossRow[14]).trim() : "";
+  const artifactRecipient = bossRow[15] ? String(bossRow[15]).trim() : "";
 
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-        <span style={{background:`${tc}22`,border:`1px solid ${tc}55`,borderRadius:"20px",
-          padding:"3px 12px",fontSize:"11px",color:tc,fontFamily:"'Cinzel',serif"}}>
-          อัตนัย — พิมพ์คำตอบ
-        </span>
-      </div>
-      <div style={{position:"relative"}}>
-        <input type="text" inputMode="decimal" value={localValue}
-          // อัปเดตแค่ตัวมันเอง หน้าจอหลักไม่ re-render
-          onChange={e => !disabled && setLocalValue(e.target.value)} 
-          // อัปเดตแม่เมื่อผู้ใช้คลิกไปที่อื่น (คลิกออก)
-          onBlur={handleSave} 
-          // อัปเดตแม่เมื่อผู้ใช้กด Enter ที่คีย์บอร์ด
-          onKeyDown={e => {
-            if (e.key === "Enter") handleSave();
-          }}
-          disabled={disabled}
-          placeholder="พิมพ์คำตอบที่นี่ เช่น 7.5"
-          style={{width:"100%",boxSizing:"border-box",
-            background:localValue?`${tc}11`:"rgba(255,255,255,.03)",
-            border:localValue?`2px solid ${tc}`:`1px solid ${tc}33`,
-            borderRadius:"12px",padding:"18px 20px",color:"#f5e6c8",
-            fontFamily:"'Sarabun',sans-serif",fontSize:"22px",outline:"none",
-            textAlign:"center",letterSpacing:"2px",transition:"all .2s",
-            boxShadow:localValue?`0 0 20px ${tc}22`:"none",opacity:disabled?.7:1}}/>
-        
-        {/* ปุ่มกากบาทลบข้อความ */}
-        {localValue&&!disabled&&(
-          <button onClick={() => { setLocalValue(""); onChange(""); }} style={{position:"absolute",right:"12px",top:"50%",
-            transform:"translateY(-50%)",background:"none",border:"none",color:"#6b5a3e",
-            fontSize:"18px",cursor:"pointer",padding:"4px",lineHeight:1}}>×</button>
-        )}
-      </div>
-      {!disabled&&<p style={{color:"#6b5a3e",fontSize:"12px",fontFamily:"'Cinzel',serif",textAlign:"center",margin:0}}>
-        ใช้ . หรือ , เป็นทศนิยมได้ · กด Enter เพื่อยืนยัน
-      </p>}
-    </div>
-  );
-}
+  // ดึง damage log ของบอสนี้
+  const logSheet = getSheet("BossDamageLog");
+  const logRows  = logSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[1]).trim() === String(bossName).trim());
 
-// ── โจทย์กล่อง — ใช้ QuestionText (รองรับ Markdown) ────────
-const QuestionBox = React.memo(function QuestionBox({ q, current, tc }: any) {
-  return (
-    <div style={{background:`${tc}08`,border:`1px solid ${tc}22`,borderRadius:"12px",
-      padding:"10px",marginBottom:"16px",minHeight:"180px",
-      display:"flex",alignItems:"center",justifyContent:"center"}}>
-      {q.imageUrl ? (
-        <img src={q.imageUrl} alt="โจทย์"
-          loading="lazy" decoding="async"
-          style={{width:"100%",maxHeight:"400px",objectFit:"contain",borderRadius:"8px",display:"block"}}/>
-      ) : q.setText ? (
-        <QuestionText text={q.setText}/>
-      ) : (
-        <p style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"13px",textAlign:"center",margin:0}}>
-          ข้อที่ {current+1}
-        </p>
-      )}
-    </div>
-  );
-});
+  if (!logRows.length) return;
 
-// ── เฉลย — ใช้ MdText ────────────────────────────────────
-// ── เฉลย — รองรับ solutionText + links ──────────────────
-function AnswerRow({ r, i, tc }: any) {
-  const pts = r.question.points ?? 1;
-  let correctText, selectedText;
-  if (r.question.questionType === "text") {
-    correctText = String(r.question.correctTextAnswer ?? "-");
-    selectedText = r.userTextAnswer || "ไม่ได้ตอบ";
-  } else {
-    correctText = r.shuffledChoices.find(c => c.origIndex === r.question.answer)?.text ?? "-";
-    selectedText = r.selectedOrigIndex !== null
-      ? r.shuffledChoices.find(c => c.origIndex === r.selectedOrigIndex)?.text ?? "-"
-      : "ไม่ได้ตอบ";
-  }
-  return (
-    <div style={{background:r.isCorrect?"rgba(39,174,96,.07)":"rgba(231,76,60,.07)",
-      border:`1px solid ${r.isCorrect?"rgba(39,174,96,.3)":"rgba(231,76,60,.3)"}`,
-      borderRadius:"10px",padding:"14px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",flexWrap:"wrap"}}>
-        <span style={{fontFamily:"'Cinzel',serif",fontSize:"12px",color:r.isCorrect?"#27ae60":"#e74c3c"}}>
-          {r.isCorrect?"✓":"✗"} ข้อ {i+1}
-        </span>
-        <span style={{background:r.isCorrect?"rgba(39,174,96,.2)":"rgba(231,76,60,.15)",
-          border:`1px solid ${r.isCorrect?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`,
-          borderRadius:"12px",padding:"1px 8px",fontSize:"11px",
-          color:r.isCorrect?"#27ae60":"#e74c3c",fontFamily:"'Cinzel',serif",fontWeight:700}}>
-          {r.isCorrect?"+":"-"}{pts} คะแนน
-        </span>
-        {r.question.questionType==="text"&&(
-          <span style={{background:`${tc}22`,border:`1px solid ${tc}44`,borderRadius:"10px",
-            padding:"1px 8px",fontSize:"10px",color:tc}}>✏ อัตนัย</span>
-        )}
-        {r.question.isRare&&<span style={{color:"#9b59b6",fontSize:"11px"}}>✦ หายาก</span>}
-      </div>
-      <div style={{fontFamily:"'Sarabun',sans-serif",fontSize:"14px",color:"#c0a878",marginBottom:"8px",lineHeight:1.6}}>
-        {r.isCorrect
-          ? <span>✓ ตอบถูก: <strong style={{color:"#27ae60"}}><MdText>{correctText}</MdText></strong></span>
-          : <span>
-              คุณตอบ: <span style={{color:"#e74c3c"}}><MdText>{selectedText}</MdText></span>
-              {" · "}เฉลย: <strong style={{color:"#27ae60"}}><MdText>{correctText}</MdText></strong>
-            </span>
-        }
-      </div>
+  // สรุป damage รวมต่อนักเรียน
+  const totalDmg = {}; // { studentId: { total, nickname } }
+  logRows.forEach(r => {
+    const sid = String(r[2]);
+    if (!totalDmg[sid]) totalDmg[sid] = { total: 0, nickname: String(r[3]) };
+    totalDmg[sid].total += Number(r[4]) || 0;
+  });
 
-      {/* ✅ ข้อความเฉลย (Column Q) — แสดงถ้ามี */}
-      {r.question.solutionText && (
-        <div style={{
-          marginTop:"10px",padding:"12px 14px",
-          background:"rgba(212,175,55,.06)",
-          border:"1px solid rgba(212,175,55,.2)",
-          borderRadius:"10px",
-          fontFamily:"'Sarabun',sans-serif",fontSize:"14px",
-          color:"#c0a878",lineHeight:1.8,
-        }}>
-          <div style={{color:"#8b7355",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"6px"}}>
-            📝 วิธีทำ / เฉลย
-          </div>
-          <MdText>{r.question.solutionText}</MdText>
-        </div>
-      )}
+  // Top 5 damage รวม
+  const sorted = Object.entries(totalDmg)
+    .sort((a,b) => b[1].total - a[1].total);
 
-      {/* links เดิม */}
-      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"8px"}}>
-        {r.question.linkText&&(
-          <a href={r.question.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
-            textDecoration:"none",padding:"4px 12px",border:`1px solid ${tc}55`,
-            borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
-        )}
-        {r.question.linkVideo&&(
-          <a href={r.question.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
-            textDecoration:"none",padding:"4px 12px",border:"1px solid rgba(231,76,60,.4)",
-            borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
-        )}
-      </div>
-    </div>
-  );
-}
+  const topKeys = ["top1","top2","top3","top4","top5"];
+  sorted.slice(0, 5).forEach(([sid, info], idx) => {
+    _addGold(sid, rewards[topKeys[idx]] || 0, `Boss Kill Top${idx+1}: ${bossName}`);
+  });
 
-const TimerDisplay = React.memo(({ initialTime, tc, onTimeUp }: any) => {
-  const [timeLeft, setTimeLeft] = useState(initialTime);
+  // Last hit (คนปิดเกม = คนสุดท้ายใน log)
+  const lastRow = logRows[logRows.length - 1];
+  const lastSid = String(lastRow[2]);
+  _addGold(lastSid, rewards.last, `Boss Kill Last Hit: ${bossName}`);
 
-  useEffect(() => {
-    const timerId = setInterval(() => {
-      setTimeLeft((prev: number) => {
-        if (prev <= 1) {
-          clearInterval(timerId);
-          onTimeUp();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerId);
-  }, [onTimeUp]);
+  // Most damage ใน 1 ครั้ง
+  const mostHit = logRows.reduce((max, r) =>
+    Number(r[4]) > Number(max[4]) ? r : max, logRows[0]);
+  const mostSid = String(mostHit[2]);
+  _addGold(mostSid, rewards.most, `Boss Kill Most Damage: ${bossName}`);
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", width: "100%" }}>
-      <span style={{fontFamily:"'Courier New',monospace",fontSize:"22px",fontWeight:700,
-        color:timeLeft<60?"#e74c3c":timeLeft<180?"#e67e22":tc,
-        textShadow:timeLeft<60?"0 0 10px rgba(231,76,60,.7)":"none", marginBottom:"6px"}}>
-        ⏱ {formatTime(timeLeft)}
-      </span>
-      <TimerBar timeLeft={timeLeft} totalTime={initialTime} color={tc} />
-    </div>
-  );
-});
+  // Artifact reward
+  if (artifactReward) {
+    let recipients = [];
+    if (artifactRecipient === "Top1")   recipients = sorted.slice(0,1).map(([sid])=>sid);
+    else if (artifactRecipient === "Last")  recipients = [lastSid];
+    else if (artifactRecipient === "Most")  recipients = [mostSid];
+    else if (artifactRecipient === "All")   recipients = sorted.map(([sid])=>sid);
 
-function QuizScreen({ set, student, questions, onFinish, theme }: any) {
-  const [current,setCurrent]=useState(0);
-  const [answers,setAnswers]=useState({});
-  
-  // ใช้ useRef จับเวลาแทนวิธีเก่า
-  const startTimeRef = useRef(Date.now());
-  const tc=theme.themeColor;
-  const maxScore=calcMaxScore(questions);
-  
-  const [allShuffled]=useState(()=>
-    questions.map(q=>q.questionType==="text"?[]:shuffle(q.choices.map((c,i)=>({text:c,origIndex:i}))))
-  );
-
-  const finish=useCallback((timeUp=false)=>{
-    // คำนวณเวลาที่ใช้จริงจาก Date.now()
-    let timeUsed=Math.floor((Date.now()-startTimeRef.current)/1000);
-    if(timeUsed>set.timeLimit) timeUsed=set.timeLimit;
-
-    const results=questions.map((q,qi)=>{
-      const shuffled=allShuffled[qi], ans=answers[qi]??null;
-      if(q.questionType==="text"){
-        const isCorrect=ans!==null&&ans!==""&&checkTextAnswer(ans,q.correctTextAnswer);
-        return {question:q,selectedOrigIndex:null,userTextAnswer:ans,isCorrect,shuffledChoices:[]};
-      } else {
-        const oi=ans!==null?shuffled[ans].origIndex:null;
-        return {question:q,selectedOrigIndex:oi,isCorrect:oi===q.answer,shuffledChoices:shuffled};
-      }
+    recipients.forEach(sid => {
+      grantArtifact({ studentId: sid, artifactId: artifactReward, source: "BossReward:" + bossName });
     });
-    onFinish({results,timeUsed,timeUp,student,set,maxScore});
-  },[answers, questions, set, student, maxScore, allShuffled]);
+  }
 
-  useEffect(()=>{
-    if(questions[current]?.questionType==="text")
-      setTimeout(()=>(document.querySelector("input[inputmode='decimal']") as HTMLInputElement)?.focus(),100);
-  },[current]);
-
-  const q=questions[current];
-  const shuffled=allShuffled[current];
-  const selNow=answers[current]??(q.questionType==="text"?"":null);
-  const answered=Object.keys(answers).filter(k=>answers[k]!==null&&answers[k]!=="").length;
-  const handleSelectChoice = useCallback((si: number) => {
-    setAnswers((a: any) => ({ ...a, [current]: si }));
-  }, [current]);
-  const handleNavigate = useCallback((index: number) => {
-    setCurrent(index);
-  }, []);
-
-  return (
-    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
-      padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
-      <div style={{background:"rgba(15,8,2,.92)",border:`1px solid ${tc}44`,
-        borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:"6px"}}>
-          <span style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginBottom:"10px"}}>
-            {student.nickname} · ข้อ <b style={{color:tc}}>{current+1}</b>/{questions.length}
-            <span style={{color:tc,marginLeft:"8px",fontSize:"11px"}}>({answered}/{questions.length} ข้อ)</span>
-          </span>
-          <div style={{ width: "150px" }}>
-            <TimerDisplay 
-              initialTime={set.timeLimit} 
-              tc={tc} 
-              onTimeUp={() => finish(true)} 
-            />
-          </div>
-        </div>
-       <div style={{display:"flex",gap:"3px",marginTop:"8px",flexWrap:"wrap"}}>
-          {questions.map((qs: any, i: number)=>{
-            const isAnswered=answers[i]!==undefined&&answers[i]!==null&&answers[i]!=="";
-            const pts=qs.points??1;
-            return (
-              <NavButton
-                key={i}
-                index={i}
-                isActive={i===current}
-                isAnswered={isAnswered}
-                pts={pts}
-                questionType={qs.questionType}
-                tc={tc}
-                onPress={handleNavigate}
-              />
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{flex:1,background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${tc}55`,borderRadius:"16px",padding:"20px",marginBottom:"12px",
-        boxShadow:"0 10px 40px rgba(0,0,0,.6)"}}>
-        <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
-          <PointsBadge points={q.points} tc={tc}/>
-          {q.isRare&&(
-            <span style={{background:"linear-gradient(135deg,#1a0a2e,#4a0080)",border:"1px solid #9b59b6",
-              borderRadius:"20px",padding:"3px 12px",fontSize:"11px",color:"#d7bde2",
-              fontFamily:"'Cinzel',serif",boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
-          )}
-        </div>
-        <QuestionBox q={q} current={current} tc={tc}/>
-        {q.questionType==="text"?(
-          <div onKeyDown={e=>e.key==="Enter"&&current<questions.length-1&&setCurrent(c=>c+1)}>
-            <TextInput value={selNow||""} onChange={val=>setAnswers(a=>({...a,[current]:val}))} tc={tc}/>
-          </div>
-        ):(
-          <McChoices 
-            shuffled={shuffled} 
-            selNow={selNow} 
-            onSelect={handleSelectChoice} 
-            tc={tc}
-          />
-        )}
-      </div>
-
-      <div style={{display:"flex",gap:"8px"}}>
-        <button onClick={()=>setCurrent(c=>c-1)} disabled={current===0} style={{
-          flex:1,padding:"12px",background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"10px",
-          color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:current===0?"not-allowed":"pointer",
-          opacity:current===0?.35:1}}>← ก่อนหน้า</button>
-        {current<questions.length-1?(
-          <button onClick={()=>setCurrent(c=>c+1)} style={{flex:2,padding:"12px",
-            background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,border:"none",
-            borderRadius:"10px",color:"#1a0e00",fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer"}}>
-            ถัดไป →
-          </button>
-        ):(
-          <button onClick={()=>finish(false)} style={{flex:2,padding:"12px",border:"none",borderRadius:"10px",
-            background:answered===questions.length
-              ?"linear-gradient(135deg,#1a4a1a,#27ae60,#1a4a1a)"
-              :`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
-            color:answered===questions.length?"#fff":"#1a0e00",
-            fontFamily:"'Cinzel',serif",fontSize:"15px",fontWeight:700,cursor:"pointer"}}>
-            {answered<questions.length?`ส่ง (${answered}/${questions.length})`:"✓ ส่งคำตอบ"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  // บันทึก reward log
+  sorted.slice(0, 5).forEach(([sid, info], idx) => {
+    _logReward(bossName, sid, info.nickname, `Top${idx+1}`, rewards[topKeys[idx]] || 0);
+  });
+  _logReward(bossName, lastSid, lastRow[3], "Last", rewards.last);
+  _logReward(bossName, mostSid, mostHit[3], "Most", rewards.most);
 }
 
-function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }: any) {
-  const {results,timeUsed,timeUp,student,set,maxScore}=data;
-  const totalScore=calcTotalScore(results);
-  const passed=totalScore>=set.passingScore;
-  const isPerfect=totalScore===maxScore&&maxScore>0;
-  const rareOK=results.filter(r=>r.question.isRare&&r.isCorrect);
-  const correctCount=results.filter(r=>r.isCorrect).length;
-  const tc=theme.themeColor;
-  const [showDetail,setShowDetail]=useState(false);
-  const [saving,setSaving]=useState(true);
-  const [saveErr,setSaveErr]=useState(false);
-  const [charData,setCharData]=useState(null);
-  const [showChar,setShowChar]=useState(false);
-  const charStatus=isPerfect?"perfect":passed?"pass":"fail";
+function _logReward(bossName, studentId, nickname, rewardType, gold) {
+  const sheet = getOrCreateSheet("BossRewardLog", [
+    "Timestamp","BossName","StudentID","Nickname","RewardType","GoldAmount"
+  ]);
+  sheet.appendRow([new Date(), bossName, studentId, nickname, rewardType, gold]);
+}
 
-  useEffect(()=>{
-    (async()=>{
-      try {
-        await apiPost({
-          action:"saveResult",studentId:student.id,
-          studentName:`${student.firstName} ${student.lastName}`,
-          studentNickname:student.nickname,setName:set.id,
-          score:`${totalScore}/${maxScore}`,correctCount:`${correctCount}/${results.length}`,
-          passed:passed?"ผ่าน":"ไม่ผ่าน",timeUsed,
-          correctIds:results.filter(r=>r.isCorrect).map(r=>r.question.id).join(","),
-          wrongIds:results.filter(r=>!r.isCorrect).map(r=>r.question.id).join(","),
+// ── leaderboard damage รวมของบอสนี้ ──────────────────────
+function getBossLeaderboard(bossName) {
+  if (!bossName) return ok({ leaderboard: [] });
+  const logSheet = getSheet("BossDamageLog");
+  const logRows  = logSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[1]).trim() === String(bossName).trim());
+
+  const totalDmg = {};
+  const maxHit   = {};
+  logRows.forEach(r => {
+    const sid  = String(r[2]);
+    const dmg  = Number(r[4]) || 0;
+    const nick = String(r[3]);
+    if (!totalDmg[sid]) totalDmg[sid] = { total: 0, max: 0, nickname: nick, hits: 0 };
+    totalDmg[sid].total += dmg;
+    totalDmg[sid].hits  += 1;
+    if (dmg > totalDmg[sid].max) totalDmg[sid].max = dmg;
+  });
+
+  const leaderboard = Object.entries(totalDmg)
+    .map(([sid, d]) => ({ studentId: sid, ...d }))
+    .sort((a,b) => b.total - a.total);
+
+  return ok({ leaderboard });
+}
+
+// ── Boss Regen (รันโดย Time Trigger ทุกวัน 00:00) ─────────
+function dailyBossRegen() {
+  const sheet = getSheet("Boss");
+  const rows  = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    const status = String(rows[i][6]).trim().toLowerCase();
+    if (status !== "active") continue;
+    const hpMax    = Number(rows[i][2]) || 0;
+    const hpCur    = Number(rows[i][4]) || 0;
+    const regen    = Number(rows[i][5]) || 0;
+    const newHp    = Math.min(hpMax, hpCur + regen);
+    sheet.getRange(i + 1, 5).setValue(newHp);
+  }
+  Logger.log("Boss regen done: " + new Date());
+}
+
+// ============================================================
+// PATCH 4.0 — ARTIFACTS
+// ============================================================
+
+// ── Item Library ──────────────────────────────────────────
+//
+// Sheet "Item_Library":
+// A: ArtifactID  B: Name  C: MaxLevel  D: IsSpecial (TRUE/FALSE)
+// E: Description  F: CanBuy (TRUE/FALSE)
+// G: UnlockCondition (PASS:SET1,SET2 หรือเว้นว่าง)
+//
+// Per-level data (Level 1-4, แต่ละ level ใช้ 7 columns):
+// H: Lv1_HP  I: Lv1_ATK  J: Lv1_DEF  K: Lv1_SPD
+// L: Lv1_Question  M: Lv1_Cost  N: Lv1_ImageId
+// O: Lv2_HP  P: Lv2_ATK  ...  (ต่อไปเรื่อยๆ)
+//
+function getItemLibrary() {
+  const cached = cacheGet("itemLibrary");
+  if (cached) return ok(cached);
+  const sheet = getSheet("Item_Library");
+  const rows  = sheet.getDataRange().getValues().slice(1);
+
+  const items = rows
+    .filter(r => r[0])
+    .map(r => {
+      const maxLv   = parseInt(r[2]) || 1;
+      const isSpec  = r[3] === true || r[3] === "TRUE";
+      const levels  = [];
+      for (let lv = 0; lv < maxLv; lv++) {
+        const base = 7 + lv * 7; // H=7, O=14, V=21, ...
+        levels.push({
+          level:    lv + 1,
+          hp:       Number(r[base])   || 0,
+          atk:      Number(r[base+1]) || 0,
+          def:      Number(r[base+2]) || 0,
+          spd:      Number(r[base+3]) || 0,
+          question: Number(r[base+4]) || 0,
+          cost:     Number(r[base+5]) || 0,
+          imageUrl: r[base+6] ? getFastImageUrl(String(r[base+6])) : "",
         });
-        for(const r of rareOK){
-          if(r.question.seriesId)
-            await apiPost({action:"saveRareProgress",studentId:student.id,seriesId:r.question.seriesId,questionId:r.question.id});
-        }
-      } catch { setSaveErr(true); }
-      setSaving(false);
-      try {
-        const cr=await apiGet({action:"getCharacter",setId:set.id});
-        if(cr.character){setCharData(cr.character);setShowChar(true);}
-      } catch {}
-    })();
-  },[]);
-
-  const scorePct=maxScore>0?(totalScore/maxScore)*100:0;
-  const passingPct=maxScore>0?(set.passingScore/maxScore)*100:0;
-
-  return (
-    <>
-      {showChar&&charData&&(
-        <CharacterPopup charData={charData} status={charStatus} onClose={()=>setShowChar(false)} tc={tc}/>
-      )}
-      <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <div style={{maxWidth:"560px",width:"100%",marginTop:"20px",marginBottom:"40px",
-          background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-          border:`2px solid ${passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
-          borderRadius:"16px",padding:"32px 28px",boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
-          <div style={{textAlign:"center",marginBottom:"24px"}}>
-            <div style={{fontSize:"56px",marginBottom:"6px"}}>{isPerfect?"🌟":passed?"🎉":"😤"}</div>
-            <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"26px",fontWeight:700,
-              color:isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c",
-              textShadow:`0 0 20px ${isPerfect?"rgba(241,196,15,.5)":passed?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
-              {isPerfect?"เต็มทุกข้อ!":passed?"ผ่านแล้ว!":"ยังไม่ผ่าน"}
-            </div>
-            {timeUp&&<div style={{color:"#e67e22",fontSize:"12px",fontFamily:"'Cinzel',serif",marginTop:"2px"}}>⏱ หมดเวลา</div>}
-            <div style={{fontSize:"60px",fontWeight:900,fontFamily:"'Cinzel',serif",
-              color:isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c",lineHeight:1,marginTop:"12px"}}>
-              {totalScore}<span style={{fontSize:"28px",color:"#6b5a3e"}}>/{maxScore}</span>
-            </div>
-            <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>คะแนน · ผ่านที่ {set.passingScore} คะแนน</div>
-            <div style={{marginTop:"12px",position:"relative"}}>
-              <div style={{width:"100%",height:"10px",background:"rgba(255,255,255,.08)",borderRadius:"5px",overflow:"visible",position:"relative"}}>
-                <div style={{height:"100%",width:scorePct+"%",
-                  background:`linear-gradient(90deg,${isPerfect?"#f1c40f":passed?"#27ae60":"#e74c3c"},${isPerfect?"#f39c12":passed?"#2ecc71":"#e74c3c"})`,
-                  borderRadius:"5px",transition:"width .8s ease",
-                  boxShadow:`0 0 8px ${isPerfect?"rgba(241,196,15,.6)":passed?"rgba(39,174,96,.6)":"rgba(231,76,60,.5)"}`}}/>
-                <div style={{position:"absolute",top:"-4px",left:passingPct+"%",width:"2px",height:"18px",
-                  background:"#f5e6c8",borderRadius:"1px",transform:"translateX(-50%)"}}/>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",marginTop:"4px"}}>
-                <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>0</span>
-                <span style={{color:"#f5e6c8",fontSize:"10px",fontFamily:"'Cinzel',serif",
-                  position:"absolute",left:passingPct+"%",transform:"translateX(-50%)"}}>เกณฑ์ {set.passingScore}</span>
-                <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif"}}>{maxScore}</span>
-              </div>
-            </div>
-            <div style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginTop:"12px"}}>
-              {student.nickname} · {set.id} · ใช้เวลา {formatTime(timeUsed)}
-            </div>
-            <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
-              color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
-              {saving?"⏳ กำลังบันทึก...":saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
-            </div>
-          </div>
-
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
-            {[["✓ ข้อถูก",`${correctCount}/${results.length}`,"#27ae60"],
-              ["★ คะแนน",`${totalScore}/${maxScore}`,tc],
-              ["⏱ เวลา",formatTime(timeUsed),"#a89070"],
-              ["✦ หายาก",`${rareOK.length} ข้อ`,"#9b59b6"]
-            ].map(([k,v,c])=>(
-              <div key={k} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(212,175,55,.12)",
-                borderRadius:"10px",padding:"12px",textAlign:"center"}}>
-                <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
-                <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
-              </div>
-            ))}
-          </div>
-
-          {rareOK.length>0&&(
-            <div style={{background:"rgba(74,0,128,.2)",border:"1px solid rgba(155,89,182,.5)",
-              borderRadius:"10px",padding:"12px 16px",marginBottom:"16px",display:"flex",alignItems:"center",gap:"10px"}}>
-              <span style={{fontSize:"18px"}}>✦</span>
-              <div>
-                <div style={{color:"#d7bde2",fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:700}}>โจทย์หายากผ่าน {rareOK.length} ข้อ!</div>
-                <div style={{color:"#7d3c98",fontSize:"11px",fontFamily:"'Sarabun',sans-serif"}}>ความสำเร็จถูกบันทึกแล้ว</div>
-              </div>
-            </div>
-          )}
-
-          <div style={{marginBottom:"16px"}}>
-            <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
-              width:"100%",padding:"13px",
-              background:showDetail?"rgba(212,175,55,.15)":"rgba(212,175,55,.06)",
-              border:`1px solid ${tc}55`,borderRadius:"10px",color:tc,
-              fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
-              {showDetail?"▲ ซ่อนเฉลย":"▼ ดูเฉลยทุกข้อ"}
-            </button>
-          </div>
-
-          {/* ✅ ใช้ AnswerRow ที่รองรับ Markdown */}
-          {showDetail&&(
-            <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"20px"}}>
-              {results.map((r,i)=><AnswerRow key={i} r={r} i={i} tc={tc}/>)}
-            </div>
-          )}
-
-          <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
-            {!isDirectLink&&(
-              <button type="button" onClick={onHome} style={{flex:1,padding:"13px",
-                background:"rgba(212,175,55,.06)",border:`1px solid ${tc}44`,borderRadius:"10px",
-                color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>หน้าหลัก</button>
-            )}
-            <button type="button" onClick={onRetry} style={{flex:2,padding:"13px",
-              background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,border:"none",
-              borderRadius:"10px",color:"#1a0e00",fontFamily:"'Cinzel',serif",
-              fontSize:"15px",fontWeight:700,cursor:"pointer",boxShadow:`0 4px 20px ${tc}33`}}>ทำใหม่</button>
-          </div>
-
-          <a href={LOOKER_STUDIO_URL} target="_blank" rel="noreferrer" style={{
-            display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",
-            width:"100%",padding:"13px",boxSizing:"border-box",
-            background:"linear-gradient(135deg,rgba(66,133,244,.15),rgba(66,133,244,.05))",
-            border:"1px solid rgba(66,133,244,.4)",borderRadius:"10px",color:"#7ab3f5",
-            fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,textDecoration:"none",
-            transition:"all .2s",boxShadow:"0 2px 12px rgba(66,133,244,.15)"}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="#7ab3f5" strokeWidth="1.5"/>
-              <path d="M8 12 Q12 6 16 12 Q12 18 8 12Z" fill="#7ab3f5" opacity="0.7"/>
-              <circle cx="12" cy="12" r="2.5" fill="#7ab3f5"/>
-            </svg>
-            ดูรายงานผลใน Looker Studio
-          </a>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── Boss UI Components ────────────────────────────────────
-const HPBar = React.memo(function HPBar({ current, max, label = "", color = "#e74c3c", height = 12, showNumbers = true }: any) {
-  const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
-  const c   = color === "auto" ? (pct > 50 ? "#e74c3c" : pct > 25 ? "#e67e22" : "#c0392b") : color;
-  return (
-    <div style={{ width: "100%" }}>
-      {(label || showNumbers) && (
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-          {label && <span style={{ color: "#a08070", fontSize: "11px", fontFamily: "'Cinzel',serif" }}>{label}</span>}
-          {showNumbers && <span style={{ color: c, fontSize: "11px", fontFamily: "'Cinzel',serif", fontWeight: 700 }}>
-            {Number(current).toLocaleString()} / {Number(max).toLocaleString()}
-          </span>}
-        </div>
-      )}
-      <div style={{ width: "100%", height: height + "px", background: "rgba(0,0,0,0.5)",
-        borderRadius: "4px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
-        <div style={{ height: "100%", width: pct + "%",
-          background: `linear-gradient(90deg,${c}cc,${c})`,
-          borderRadius: "4px", transition: "width 0.5s ease",
-          boxShadow: `0 0 8px ${c}88` }} />
-      </div>
-    </div>
-  );
-});
-
-const TimerRing = React.memo(function TimerRing({ timeLeft, totalTime }: any) {
-  const pct   = totalTime > 0 ? timeLeft / totalTime : 0;
-  const r     = 22;
-  const circ  = 2 * Math.PI * r;
-  const color = timeLeft < 30 ? "#e74c3c" : timeLeft < 60 ? "#e67e22" : "#d4af37";
-  return (
-    <div style={{ position: "relative", width: "56px", height: "56px", flexShrink: 0 }}>
-      <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
-        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-        <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth="4"
-          strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
-          style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s",
-            filter: `drop-shadow(0 0 4px ${color})` }} />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontFamily: "'Courier New',monospace", fontSize: "11px", fontWeight: 700, color,
-          textShadow: timeLeft < 30 ? `0 0 8px ${color}` : "none" }}>
-          {formatTime(timeLeft)}
-        </span>
-      </div>
-    </div>
-  );
-});
-
-function DamageFlash({ damage, penetrated }: any) {
-  return (
-    <div style={{ position: "fixed", top: "38%", left: "50%", transform: "translateX(-50%)",
-      zIndex: 999, pointerEvents: "none", animation: "dmgFloat 1.4s ease-out forwards", textAlign: "center" }}>
-      {penetrated ? (
-        <>
-          <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: "44px", fontWeight: 900,
-            color: "#e74c3c", textShadow: "0 0 30px rgba(231,76,60,0.9)" }}>-{damage}</div>
-          <div style={{ color: "#ff6b35", fontSize: "13px", fontFamily: "'Cinzel',serif", marginTop: "4px" }}>
-            ⚔️ เจาะเกราะ!
-          </div>
-        </>
-      ) : (
-        <>
-          <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: "30px", fontWeight: 900, color: "#6b5a3e" }}>
-            BLOCKED
-          </div>
-          <div style={{ color: "#8b7355", fontSize: "12px", fontFamily: "'Cinzel',serif", marginTop: "4px" }}>
-            🛡️ เกราะกันไว้!
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── ChallengeScreen (รองรับ Boss Mode) ───────────────────
-function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss = null, playerStats = null }: any) {
-  const { maxQuestions, challengeName } = challengeConfig;
-  // ใช้ HP จริงจาก playerStats แทน challengeLives
-  const maxLives = playerStats?.effective?.hp ?? (challengeConfig.lives ?? 3);
-  const tc     = theme.themeColor;
-  const ACCENT = "#e74c3c";
-  const isBoss = !!boss; // Boss mode ถ้ามี boss ส่งมา
-
-  // เวลาต่อข้อ: Boss mode = 180 วิ + SPD*20, ปกติ = ไม่มี timer
-  const timePerQ = isBoss ? 180 + ((playerStats?.effective?.spd ?? 1) - 1) * 20 : 0;
-
-  const [current,         setCurrent]         = useState(null);
-  const [shuffledChoices, setShuffledChoices] = useState([]);
-  const [selected,        setSelected]        = useState(null);
-  const [textVal,         setTextVal]         = useState("");
-  const [phase,           setPhase]           = useState("question");
-  const [lives,           setLives]           = useState(maxLives);
-  const [streak,          setStreak]          = useState(0);
-  const [score,           setScore]           = useState(0);
-  const [questionNum,     setQuestionNum]     = useState(0);
-  const [history,         setHistory]         = useState([]);
-  const [shakeHeart,      setShakeHeart]      = useState(false);
-  const [bossHp,          setBossHp]          = useState(boss?.hpCurrent ?? 0);
-  const [dmgFlash,        setDmgFlash]        = useState<any>(null);
-  const [timeLeft,        setTimeLeft]        = useState(timePerQ);
-
-  const usedIds    = useRef(new Set());
-  const scoreRef   = useRef(0);
-  const livesRef   = useRef(maxLives);
-  const historyRef = useRef<any[]>([]);
-  const bossHpRef  = useRef(boss?.hpCurrent ?? 0);
-  const timerRef   = useRef<any>(null);
-
-  // ── Timer ต่อข้อ (Boss mode เท่านั้น) ──────────────────
-  useEffect(() => {
-    if (!isBoss || phase !== "question" || !current) return;
-    setTimeLeft(timePerQ);
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t: number) => {
-        if (t <= 1) { clearInterval(timerRef.current); submitAnswer(true); return 0; }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, [current, phase]);
-
-  useEffect(()=>{ loadNext(0, maxLives, []); },[]);
-
-  // ── helper: คำนวณ damage รวม session แล้วส่งครั้งเดียว ──
-  function saveFinalBossDamage(finalHistory: any[]) {
-    if (!isBoss || !boss) return;
-    const correctCount = finalHistory.filter(h => h.isCorrect).length;
-    const atk          = playerStats?.effective?.atk ?? 1;
-    const totalDmg     = correctCount + atk; // ← สูตร: ข้อถูก + ATK
-    const pen          = totalDmg > (boss.def ?? 0);
-    if (!pen) return; // ตีไม่เข้าเกราะ ไม่บันทึก
-
-    const newBossHp = Math.max(0, bossHpRef.current - totalDmg);
-    bossHpRef.current = newBossHp;
-    setBossHp(newBossHp);
-
-    apiPost({
-      action:    "saveBossDamage",
-      bossName:  boss.name,
-      studentId: student.id,
-      nickname:  student.nickname,
-      damage:    totalDmg,
-      questionId: "session",
-      setName:   "session",
-    }).catch(() => {});
-
-    return { totalDmg, pen, newBossHp };
-  }
-
-  function loadNext(currentNum: number, currentLives: number, currentHistory: any[]) {
-    const q = pickChallengeQuestion(pool, usedIds.current);
-    if (!q || (maxQuestions > 0 && currentNum >= maxQuestions)) {
-      // จบ session → ส่ง damage ครั้งเดียว
-      const dmgResult = saveFinalBossDamage(currentHistory);
-      const finalBossHp     = dmgResult?.newBossHp ?? bossHpRef.current;
-      const finalBossDefeated = isBoss && finalBossHp <= 0;
-      onFinish({
-        history: currentHistory, score: scoreRef.current,
-        lives: currentLives, livesMax: maxLives,
-        reason: finalBossDefeated ? "bossDefeated" : "complete",
-        student, challengeConfig,
-        bossHpFinal: finalBossHp,
-        bossDefeated: finalBossDefeated,
-        totalBossDmg: dmgResult?.totalDmg ?? 0,
-      });
-      return;
-    }
-    usedIds.current.add(q.id);
-    setCurrent(q);
-    setShuffledChoices(q.questionType === "text" ? [] : shuffle(q.choices.map((c: any, i: number) => ({ text: c, origIndex: i }))));
-    setSelected(null); setTextVal(""); setPhase("question"); setDmgFlash(null);
-  }
-
-  function submitAnswer(timeUp = false) {
-    if (!current) return;
-    clearInterval(timerRef.current);
-
-    let isCorrect = false, selectedOrigIndex: number | null = null;
-    if (!timeUp) {
-      if (current.questionType === "text") {
-        if (textVal.trim() === "") return;
-        isCorrect = checkTextAnswer(textVal, current.correctTextAnswer);
-      } else {
-        if (selected === null) return;
-        selectedOrigIndex = shuffledChoices[selected].origIndex;
-        isCorrect = selectedOrigIndex === current.answer;
       }
-    }
+      return {
+        artifactId:        String(r[0]),
+        name:              String(r[1]),
+        maxLevel:          maxLv,
+        isSpecial:         isSpec,
+        description:       r[4]  ? String(r[4])  : "",
+        canBuy:            r[5]  !== false && r[5] !== "FALSE",
+        unlockCondition:   r[6]  ? String(r[6])  : "",
+        levels,
+      };
+    });
 
-    const pts = isCorrect ? (current.points ?? 1) : 0;
-
-    // preview damage flash (แค่แสดงผล ไม่บันทึก Sheet)
-    if (isBoss && isCorrect) {
-      const correctSoFar = historyRef.current.filter(h => h.isCorrect).length + 1;
-      const atk = playerStats?.effective?.atk ?? 1;
-      const previewDmg = correctSoFar + atk;
-      const pen = previewDmg > (boss.def ?? 0);
-      setDmgFlash({ damage: pen ? previewDmg : 0, penetrated: pen });
-    }
-
-    const newEntry = {
-      question: current, isCorrect, selectedOrigIndex,
-      userTextAnswer: textVal, shuffledChoices: [...shuffledChoices],
-      questionNumber: questionNum + 1,
-    };
-    const newHistory = [...historyRef.current, newEntry];
-    historyRef.current = newHistory;
-    setHistory(newHistory);
-    setQuestionNum((n: number) => n + 1);
-
-    if (isCorrect) {
-      scoreRef.current += pts; setScore((s: number) => s + pts); setStreak((s: number) => s + 1);
-      setPhase("reveal_correct");
-      const nextNum = questionNum + 1;
-      setTimeout(() => {
-        if (maxQuestions > 0 && nextNum >= maxQuestions) {
-          // จบครบจำนวน → ส่ง damage ครั้งเดียว
-          const dmgResult       = saveFinalBossDamage(newHistory);
-          const finalBossHp     = dmgResult?.newBossHp ?? bossHpRef.current;
-          const finalBossDefeated = isBoss && finalBossHp <= 0;
-          onFinish({
-            history: newHistory, score: scoreRef.current,
-            lives: livesRef.current, livesMax: maxLives,
-            reason: finalBossDefeated ? "bossDefeated" : "complete",
-            student, challengeConfig,
-            bossHpFinal: finalBossHp,
-            bossDefeated: finalBossDefeated,
-            totalBossDmg: dmgResult?.totalDmg ?? 0,
-          });
-        } else { loadNext(nextNum, livesRef.current, newHistory); }
-      }, 1200);
-    } else {
-      const newLives = livesRef.current - 1;
-      livesRef.current = newLives; setLives(newLives); setStreak(0);
-      setShakeHeart(true); setTimeout(() => setShakeHeart(false), 600);
-      setPhase("reveal_wrong");
-    }
-  }
-
-  function handleNextAfterWrong() {
-    if (livesRef.current <= 0) {
-      // หมดชีวิต → ส่ง damage ครั้งเดียว
-      const dmgResult       = saveFinalBossDamage(historyRef.current);
-      const finalBossHp     = dmgResult?.newBossHp ?? bossHpRef.current;
-      const finalBossDefeated = isBoss && finalBossHp <= 0;
-      onFinish({
-        history: historyRef.current, score: scoreRef.current,
-        lives: 0, livesMax: maxLives,
-        reason: finalBossDefeated ? "bossDefeated" : "gameover",
-        student, challengeConfig,
-        bossHpFinal: finalBossHp,
-        bossDefeated: finalBossDefeated,
-        totalBossDmg: dmgResult?.totalDmg ?? 0,
-      });
-    } else { loadNext(questionNum, livesRef.current, historyRef.current); }
-  }
-
-  if(!current) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><Spinner color={tc}/></div>
-  );
-
-  const isReveal        = phase === "reveal_correct" || phase === "reveal_wrong";
-  const isCorrectReveal = phase === "reveal_correct";
-  const progressPct     = maxQuestions > 0 ? (questionNum / maxQuestions) * 100 : 0;
-
-  return (
-    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",
-      padding:"12px",maxWidth:"720px",margin:"0 auto",position:"relative",zIndex:1}}>
-
-      {/* Damage Flash (Boss mode) */}
-      {isBoss && dmgFlash && isReveal && isCorrectReveal && (
-        <DamageFlash damage={dmgFlash.damage} penetrated={dmgFlash.penetrated} />
-      )}
-
-      {/* Boss HP Bar */}
-      {isBoss && boss && (
-        <div style={{background:"rgba(12,4,4,.94)",border:"1px solid rgba(231,76,60,.4)",
-          borderRadius:"12px",padding:"10px 14px",marginBottom:"8px"}}>
-          {/* รูป Boss ใหญ่ */}
-          {boss.gifUrl && (
-            <div style={{textAlign:"center",marginBottom:"10px"}}>
-              <img src={boss.gifUrl} alt={boss.name}
-                style={{width:"100%",maxHeight:"432px",objectFit:"contain",
-                  filter:"drop-shadow(0 0 16px rgba(231,76,60,0.6))",
-                  borderRadius:"12px"}}
-                onError={(e: any) => e.currentTarget.style.display = "none"}/>
-            </div>
-          )}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-            <span style={{fontFamily:"'Cinzel Decorative',serif",color:"#e74c3c",fontSize:"16px",
-              textShadow:"0 0 12px rgba(231,76,60,0.4)"}}>
-              {boss.name}
-            </span>
-            <span style={{color:"#f5c6c6",fontSize:"13px",fontFamily:"'Cinzel',serif",fontWeight:600,
-              background:"rgba(231,76,60,0.15)",border:"1px solid rgba(231,76,60,0.3)",
-              padding:"4px 10px",borderRadius:"20px"}}>
-              🛡️ DEF {boss.def} · ตี &gt; {boss.def}
-            </span>
-          </div>
-          <HPBar current={bossHp} max={boss.hpMax} color="auto" height={12} showNumbers={true}/>
-        </div>
-      )}
-
-      {/* Header */}
-      <div style={{background:"rgba(15,8,2,.94)",border:`1px solid ${ACCENT}44`,
-        borderRadius:"12px",padding:"10px 14px",marginBottom:"12px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-              {challengeConfig.logoImageUrl
-                ? <img src={challengeConfig.logoImageUrl} alt="logo"
-                    style={{width:"20px",height:"20px",borderRadius:"50%",objectFit:"cover"}}
-                    onError={(e: any) => e.currentTarget.style.display = "none"}/>
-                : <span style={{fontSize:"20px"}}>{challengeConfig.logoEmoji || challengeConfig.logoImageId || "⚡"}</span>
-              }
-              <span style={{color:ACCENT,fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",fontWeight:700}}>
-                {challengeName||"Challenge Mode"}
-              </span>
-            </div>
-            <div style={{color:"#6b5a3e",fontSize:"11px",fontFamily:"'Cinzel',serif",marginTop:"1px"}}>
-              {student.nickname} · ข้อที่ {questionNum+1}{maxQuestions>0?` / ${maxQuestions}`:""}
-            </div>
-          </div>
-
-          {/* Timer (Boss) หรือ Score (Challenge ปกติ) */}
-          {isBoss && phase === "question" ? (
-            <TimerRing timeLeft={timeLeft} totalTime={timePerQ} />
-          ) : (
-            <div style={{textAlign:"right"}}>
-              <div style={{color:tc,fontFamily:"'Cinzel',serif",fontSize:"22px",fontWeight:900}}>
-                {score}<span style={{fontSize:"12px",color:"#6b5a3e",marginLeft:"4px"}}>คะแนน</span>
-              </div>
-              {streak>=3&&<div style={{fontSize:"11px",color:"#f39c12",fontFamily:"'Cinzel',serif"}}>🔥 ×{streak} ติดต่อกัน</div>}
-            </div>
-          )}
-        </div>
-
-        {/* Boss player stats row */}
-        {isBoss && playerStats && (
-          <div style={{display:"flex",gap:"16px",marginBottom:"8px",
-            padding:"8px 12px",background:"rgba(212,175,55,.06)",
-            borderRadius:"8px",border:"1px solid rgba(212,175,55,.15)"}}>
-            {([["⚔️ ATK", playerStats.effective.atk],
-               ["🛡️ DEF", playerStats.effective.def],
-               ["⚡ SPD", playerStats.effective.spd]] as any[]).map(([icon, val]: any) => (
-              <div key={icon} style={{display:"flex",alignItems:"center",gap:"4px"}}>
-                <span style={{color:"#c0a878",fontSize:"13px",fontFamily:"'Cinzel',serif"}}>{icon}</span>
-                <span style={{color:"#f5e6c8",fontSize:"16px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{val}</span>
-              </div>
-            ))}
-            <span style={{marginLeft:"auto",color:tc,fontSize:"14px",fontFamily:"'Cinzel',serif",fontWeight:700}}>
-              {score} คะแนน
-              {streak >= 3 && <span style={{color:"#f39c12",marginLeft:"6px"}}>🔥×{streak}</span>}
-            </span>
-          </div>
-        )}
-
-        <div style={{display:"flex",alignItems:"center",gap:"10px",
-          animation:shakeHeart?"heartshake 0.5s ease":"none"}}>
-          <LifeHearts total={maxLives} remaining={lives}/>
-          {maxQuestions>0&&(
-            <div style={{display:"flex",alignItems:"center",gap:"6px",flex:1}}>
-              <div style={{flex:1,height:"4px",background:"rgba(255,255,255,.08)",borderRadius:"2px",overflow:"hidden"}}>
-                <div style={{height:"100%",width:progressPct+"%",background:tc,borderRadius:"2px",transition:"width 0.5s"}}/>
-              </div>
-              <span style={{color:"#6b5a3e",fontSize:"10px",fontFamily:"'Cinzel',serif",whiteSpace:"nowrap"}}>
-                {questionNum}/{maxQuestions}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={{flex:1,
-        background:isReveal
-          ?(isCorrectReveal?"linear-gradient(160deg,rgba(10,30,10,.97),rgba(15,40,15,.97))"
-            :"linear-gradient(160deg,rgba(35,10,10,.97),rgba(45,15,15,.97))")
-          :"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${isReveal?(isCorrectReveal?"rgba(39,174,96,.6)":"rgba(231,76,60,.6)"):tc+"55"}`,
-        borderRadius:"16px",padding:"20px",marginBottom:"12px",
-        boxShadow:isReveal?`0 10px 40px ${isCorrectReveal?"rgba(39,174,96,.2)":"rgba(231,76,60,.2)"}`:"0 10px 40px rgba(0,0,0,.6)",
-        transition:"all 0.3s ease"}}>
-
-        {isReveal&&(
-          <div style={{textAlign:"center",padding:"10px",marginBottom:"14px",borderRadius:"10px",
-            background:isCorrectReveal?"rgba(39,174,96,.15)":"rgba(231,76,60,.15)",
-            border:`1px solid ${isCorrectReveal?"rgba(39,174,96,.4)":"rgba(231,76,60,.4)"}`}}>
-            <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"18px",
-              color:isCorrectReveal?"#27ae60":"#e74c3c"}}>
-              {isCorrectReveal?"✓ ถูกต้อง!":"✗ ผิด!"}
-            </span>
-            {isCorrectReveal&&streak>0&&streak>=3&&(
-              <span style={{color:"#f39c12",fontSize:"13px",marginLeft:"10px",fontFamily:"'Cinzel',serif"}}>🔥 ×{streak}</span>
-            )}
-            {!isCorrectReveal&&(
-              <div style={{color:"#c0a878",fontSize:"13px",marginTop:"4px",fontFamily:"'Sarabun',sans-serif"}}>
-                เหลือ {lives} ชีวิต
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
-          <PointsBadge points={current.points} tc={tc}/>
-          {current.isRare&&(
-            <span style={{background:"linear-gradient(135deg,#1a0a2e,#4a0080)",border:"1px solid #9b59b6",
-              borderRadius:"20px",padding:"3px 12px",fontSize:"11px",color:"#d7bde2",
-              fontFamily:"'Cinzel',serif",boxShadow:"0 0 10px rgba(155,89,182,.5)"}}>✦ โจทย์หายาก</span>
-          )}
-          <span style={{background:`${tc}11`,border:`1px solid ${tc}33`,borderRadius:"20px",
-            padding:"3px 10px",fontSize:"10px",color:"#8b7355",fontFamily:"'Cinzel',serif"}}>
-            {current.setName}
-          </span>
-        </div>
-
-        {/* ✅ ใช้ QuestionBox รองรับ Markdown */}
-        <QuestionBox q={current} current={questionNum} tc={tc}/>
-
-        {current.questionType==="text"?(
-          <div onKeyDown={e=>{ if(e.key==="Enter"&&!isReveal) submitAnswer(); }}>
-            <TextInput value={textVal} onChange={setTextVal} tc={tc} disabled={isReveal}/>
-            {isReveal&&(
-              <div style={{marginTop:"12px",padding:"12px",
-                background:"rgba(39,174,96,.1)",border:"1px solid rgba(39,174,96,.3)",
-                borderRadius:"10px",textAlign:"center"}}>
-                <span style={{color:"#8b7355",fontSize:"12px",fontFamily:"'Cinzel',serif"}}>เฉลย: </span>
-                {/* ✅ เฉลยอัตนัย Markdown */}
-                <strong style={{color:"#27ae60",fontSize:"18px",fontFamily:"'Sarabun',sans-serif"}}>
-                  <MdText>{current.correctTextAnswer}</MdText>
-                </strong>
-              </div>
-            )}
-          </div>
-        ):(
-          <McChoices shuffled={shuffledChoices} selNow={selected} onSelect={si=>!isReveal&&setSelected(si)}
-            tc={tc} disabled={isReveal} correctOrigIndex={isReveal?current.answer:null} showAnswer={isReveal}/>
-        )}
-
-        {isReveal&&!isCorrectReveal&&(current.linkText||current.linkVideo)&&(
-          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"12px"}}>
-            {current.linkText&&(
-              <a href={current.linkText} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:tc,
-                textDecoration:"none",padding:"5px 14px",border:`1px solid ${tc}55`,
-                borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>📄 เฉลยเขียน</a>
-            )}
-            {current.linkVideo&&(
-              <a href={current.linkVideo} target="_blank" rel="noreferrer" style={{fontSize:"12px",color:"#e74c3c",
-                textDecoration:"none",padding:"5px 14px",border:"1px solid rgba(231,76,60,.4)",
-                borderRadius:"20px",fontFamily:"'Cinzel',serif"}}>▶ เฉลยวิดีโอ</a>
-            )}
-          </div>
-        )}
-      </div>
-
-      {!isReveal?(
-        <button onClick={()=>submitAnswer(false)}
-          disabled={current.questionType!=="text"?selected===null:textVal.trim()===""}
-          style={{width:"100%",padding:"14px",border:"none",borderRadius:"12px",
-            background:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")
-              ?`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`:"rgba(255,255,255,.04)",
-            color:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")?"#1a0e00":"#4a3a20",
-            fontFamily:"'Cinzel',serif",fontSize:"16px",fontWeight:700,
-            cursor:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")?"pointer":"not-allowed",
-            boxShadow:(current.questionType!=="text"?selected!==null:textVal.trim()!=="")
-              ?`0 4px 20px ${tc}33`:"none"}}>
-          {isBoss ? "⚔️ โจมตี" : "ยืนยันคำตอบ"}
-        </button>
-      ):isCorrectReveal?(
-        <div style={{width:"100%",padding:"14px",borderRadius:"12px",background:"rgba(39,174,96,.08)",
-          border:"1px solid rgba(39,174,96,.25)",color:"#27ae60",fontFamily:"'Cinzel',serif",
-          fontSize:"14px",textAlign:"center"}}>
-          ⏳ กำลังไปข้อถัดไป...
-        </div>
-      ):(
-        <button onClick={handleNextAfterWrong} style={{width:"100%",padding:"14px",border:"none",borderRadius:"12px",
-          background:lives<=0
-            ?"linear-gradient(135deg,#6b1010,#c0392b,#6b1010)"
-            :`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,
-          color:lives<=0?"#fff":"#1a0e00",fontFamily:"'Cinzel',serif",fontSize:"16px",fontWeight:700,cursor:"pointer",
-          boxShadow:lives<=0?"0 4px 20px rgba(231,76,60,.4)":`0 4px 20px ${tc}33`}}>
-          {lives<=0?"💀 หมดชีวิต — ดูผลลัพธ์":"→ ข้อถัดไป"}
-        </button>
-      )}
-    </div>
-  );
+  const result = { items };
+  cacheSet("itemLibrary", result);
+  return ok(result);
 }
+//
+// Sheet "Player_Inventory":
+// A: StudentID  B: ArtifactID  C: ArtifactName  D: Level
+// E: HP bonus  F: ATK bonus  G: DEF bonus  H: SPD bonus
+// I: Question bonus  (คำนวณจาก Item_Library ตาม Level)
+//
+function getPlayerInventory(studentId) {
+  const invSheet  = getSheet("Player_Inventory");
+  const invRows   = invSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[0]).trim() === String(studentId).trim());
 
-function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
-  const { history, score, lives, livesMax, reason, student, challengeConfig,
-          bossHpFinal, bossDefeated } = data;
-  const tc = theme.themeColor;
-  const isComplete  = reason === "complete" || reason === "bossDefeated";
-  const isBossMode  = !!data.bossHpFinal !== undefined && !!challengeConfig?.bossName;
-  const correctCount = history.filter(h=>h.isCorrect).length;
-  const totalQ = history.length;
-  const maxScore = history.reduce((s,h)=>s+(h.question.points??1),0);
-  let bestStreak=0, cur=0;
-  history.forEach(h=>{ if(h.isCorrect){cur++;bestStreak=Math.max(bestStreak,cur);}else cur=0; });
-
-  // ── Boss damage summary ──────────────────────────────────
-  const totalDmg = data.totalBossDmg ?? 0;
-  const [showDetail,setShowDetail]=useState(false);
-  const [saving,setSaving]=useState(true);
-  const [saveErr,setSaveErr]=useState(false);
-
-  useEffect(()=>{
-    (async()=>{
-      try {
-        await apiPost({
-          action:"saveResult", studentId:student.id,
-          studentName:`${student.firstName} ${student.lastName}`,
-          studentNickname:student.nickname,
-          setName:`[CHALLENGE] ${challengeConfig.challengeName||challengeConfig.setId}`,
-          score:`${score}/${maxScore}`, correctCount:`${correctCount}/${totalQ}`,
-          passed:isComplete?"ผ่าน (ครบจำนวน)":`ไม่ผ่าน (หมดชีวิต ข้อ ${totalQ})`,
-          timeUsed:0,
-          correctIds:history.filter(h=>h.isCorrect).map(h=>h.question.id).join(","),
-          wrongIds:history.filter(h=>!h.isCorrect).map(h=>h.question.id).join(","),
-        });
-      } catch { setSaveErr(true); }
-      setSaving(false);
-    })();
-  },[]);
-
-  // ใช้ AnswerRow สำหรับ challenge history ด้วย
-  const historyAsResults = history.map(h => ({
-    ...h,
-    question: h.question,
-    isCorrect: h.isCorrect,
-    selectedOrigIndex: h.selectedOrigIndex,
-    userTextAnswer: h.userTextAnswer,
-    shuffledChoices: h.shuffledChoices,
+  const inventory = invRows.map(r => ({
+    studentId:    String(r[0]),
+    artifactId:   String(r[1]),
+    artifactName: String(r[2]),
+    level:        Number(r[3]) || 1,
+    bonuses: {
+      hp:       Number(r[4]) || 0,
+      atk:      Number(r[5]) || 0,
+      def:      Number(r[6]) || 0,
+      spd:      Number(r[7]) || 0,
+      question: Number(r[8]) || 0,
+    }
   }));
 
-  return (
-    <div style={{minHeight:"100vh",overflowY:"auto",padding:"20px",display:"flex",flexDirection:"column",alignItems:"center"}}>
-      <div style={{maxWidth:"560px",width:"100%",marginTop:"20px",marginBottom:"40px",
-        background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-        border:`2px solid ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
-        borderRadius:"16px",padding:"32px 28px",boxShadow:"0 20px 60px rgba(0,0,0,.8)",position:"relative",zIndex:1}}>
-        <div style={{textAlign:"center",marginBottom:"24px"}}>
-          <div style={{marginBottom:"8px"}}>
-            {data.challengeConfig?.logoImageUrl
-              ? <div style={{position:"relative",display:"inline-block"}}>
-                  <img src={data.challengeConfig.logoImageUrl} alt="logo"
-                    style={{width:"60px",height:"60px",borderRadius:"50%",objectFit:"cover",
-                      border:`2px solid ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`,
-                      boxShadow:`0 0 20px ${isComplete?"rgba(39,174,96,.4)":"rgba(231,76,60,.3)"}`}}
-                    onError={e=>e.currentTarget.style.display="none"}/>
-                  <span style={{position:"absolute",bottom:"-4px",right:"-4px",fontSize:"22px"}}>{isComplete?"🏆":"💀"}</span>
-                </div>
-              : <span style={{fontSize:"52px"}}>{isComplete?"🏆":"💀"}</span>
-            }
-          </div>
-          <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"22px",fontWeight:700,
-            color:isComplete?"#27ae60":"#e74c3c",
-            textShadow:`0 0 20px ${isComplete?"rgba(39,174,96,.5)":"rgba(231,76,60,.4)"}`}}>
-            {isComplete?"ผ่านครบทุกข้อ!":"หมดชีวิต!"}
-          </div>
-          <div style={{color:"#8b7355",fontFamily:"'Cinzel',serif",fontSize:"12px",marginTop:"4px"}}>
-            ⚡ {challengeConfig.challengeName||"Challenge Mode"}
-          </div>
-          <div style={{fontSize:"64px",fontWeight:900,fontFamily:"'Cinzel',serif",color:tc,lineHeight:1,marginTop:"14px"}}>
-            {score}<span style={{fontSize:"24px",color:"#6b5a3e",marginLeft:"4px"}}>คะแนน</span>
-          </div>
-          <div style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginTop:"6px"}}>
-            {student.nickname} · ถูก {correctCount}/{totalQ} ข้อ
-          </div>
-          <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
-            color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
-            {saving?"⏳ กำลังบันทึก...":saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
-          </div>
-        </div>
-
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px"}}>
-          {[["✓ ถูก",`${correctCount} ข้อ`,"#27ae60"],["★ คะแนน",`${score}`,tc],
-            ["🔥 Streak",`${bestStreak} ข้อ`,"#f39c12"],["❤️ ชีวิตเหลือ",`${lives}/${livesMax}`,lives>0?"#27ae60":"#e74c3c"]
-          ].map(([k,v,c]: any)=>(
-            <div key={k} style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(212,175,55,.2)",
-              borderRadius:"12px",padding:"14px",textAlign:"center"}}>
-              <div style={{color:"#c0a878",fontSize:"13px",fontFamily:"'Cinzel',serif",marginBottom:"6px"}}>{k}</div>
-              <div style={{color:c,fontSize:"24px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Boss Damage Summary (แสดงเฉพาะ Boss mode) ── */}
-        {totalDmg > 0 && (
-          <div style={{
-            background:"linear-gradient(135deg,rgba(139,0,0,.15),rgba(180,0,0,.08))",
-            border:"1px solid rgba(231,76,60,.4)",
-            borderRadius:"12px",padding:"16px",marginBottom:"16px",
-          }}>
-            <div style={{color:"#e74c3c",fontFamily:"'Cinzel Decorative',serif",fontSize:"13px",
-              fontWeight:700,marginBottom:"12px",display:"flex",alignItems:"center",gap:"8px"}}>
-              ⚔️ สรุปการโจมตีบอส
-              {bossDefeated && (
-                <span style={{background:"rgba(231,76,60,.2)",border:"1px solid rgba(231,76,60,.5)",
-                  borderRadius:"20px",padding:"2px 10px",fontSize:"11px",color:"#ff6b35"}}>
-                  💀 บอสพ่ายแพ้!
-                </span>
-              )}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
-              {[
-                ["⚔️ Damage รวม", totalDmg.toLocaleString(), "#e74c3c"],
-                ["✓ ข้อถูก", `${correctCount} ข้อ`, "#27ae60"],
-              ].map(([k,v,c]: any) => (
-                <div key={k} style={{background:"rgba(231,76,60,.06)",border:"1px solid rgba(231,76,60,.2)",
-                  borderRadius:"10px",padding:"12px",textAlign:"center"}}>
-                  <div style={{color:"#8b5555",fontSize:"11px",fontFamily:"'Cinzel',serif",marginBottom:"4px"}}>{k}</div>
-                  <div style={{color:c,fontSize:"20px",fontWeight:700,fontFamily:"'Cinzel',serif"}}>{v}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{marginTop:"10px",padding:"10px",background:"rgba(231,76,60,.06)",
-              borderRadius:"8px",textAlign:"center"}}>
-              <span style={{color:"#8b5555",fontSize:"12px",fontFamily:"'Cinzel',serif"}}>
-                สูตร: {correctCount} ข้อถูก + ATK = {totalDmg} damage
-              </span>
-            </div>
-            {bossHpFinal !== undefined && !bossDefeated && (
-              <div style={{marginTop:"8px",color:"#6b3030",fontSize:"12px",
-                fontFamily:"'Cinzel',serif",textAlign:"center"}}>
-                HP บอสที่เหลือ: <span style={{color:"#e74c3c",fontWeight:700}}>
-                  {Number(bossHpFinal).toLocaleString()}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{marginBottom:"12px"}}>
-          <button type="button" onClick={()=>setShowDetail(d=>!d)} style={{
-            width:"100%",padding:"13px",
-            background:showDetail?"rgba(212,175,55,.15)":"rgba(212,175,55,.06)",
-            border:`1px solid ${tc}55`,borderRadius:"10px",color:tc,
-            fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>
-            {showDetail?"▲ ซ่อนเฉลย":"▼ ดูเฉลยทุกข้อ"}
-          </button>
-        </div>
-
-        {/* ✅ ใช้ AnswerRow รองรับ Markdown ใน Challenge Result */}
-        {showDetail&&(
-          <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}}>
-            {historyAsResults.map((r,i)=><AnswerRow key={i} r={r} i={i} tc={tc}/>)}
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
-          <button type="button" onClick={onHome} style={{flex:1,padding:"13px",
-            background:"rgba(212,175,55,.06)",border:`1px solid ${tc}44`,borderRadius:"10px",
-            color:tc,fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>หน้าหลัก</button>
-          <button type="button" onClick={onRetry} style={{flex:2,padding:"13px",
-            background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,border:"none",
-            borderRadius:"10px",color:"#1a0e00",fontFamily:"'Cinzel',serif",
-            fontSize:"15px",fontWeight:700,cursor:"pointer",boxShadow:`0 4px 20px ${tc}33`}}>⚡ ลองใหม่</button>
-        </div>
-
-        <a href={LOOKER_STUDIO_URL} target="_blank" rel="noreferrer" style={{
-          display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",
-          width:"100%",padding:"13px",boxSizing:"border-box",
-          background:"linear-gradient(135deg,rgba(66,133,244,.15),rgba(66,133,244,.05))",
-          border:"1px solid rgba(66,133,244,.4)",borderRadius:"10px",color:"#7ab3f5",
-          fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,textDecoration:"none",
-          transition:"all .2s",boxShadow:"0 2px 12px rgba(66,133,244,.15)"}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="#7ab3f5" strokeWidth="1.5"/>
-            <path d="M8 12 Q12 6 16 12 Q12 18 8 12Z" fill="#7ab3f5" opacity="0.7"/>
-            <circle cx="12" cy="12" r="2.5" fill="#7ab3f5"/>
-          </svg>
-          ดูรายงานผลใน Looker Studio
-        </a>
-      </div>
-    </div>
-  );
+  return ok({ inventory });
 }
 
-export default function App() {
-  const [screen,setScreen]=useState("init");
-  const [quizSets, setQuizSets] = useState([]); 
-  const [selectedSet,setSet]=useState(null);
-  const [student,setStudent]=useState(null);
-  const [questions,setQuestions]=useState([]);
-  const [resultData,setResult]=useState(null);
-  const [loadError,setLoadError]=useState("");
-  const [theme,setTheme]=useState(DEFAULT_THEME);
-  const [mode]=useState(()=>getModeFromUrl());
-  const [challengeConfig,setChallengeConfig]=useState(null);
-  const [challengePool,setChallengePool]=useState([]);
-  const [challengeResult,setChallengeResult]=useState(null);
-  const [cachedConfig, setCachedConfig] = useState(null);
-  const [activeBoss,   setActiveBoss]   = useState<any>(null);   // Boss Mode
-  const [playerStats,  setPlayerStats]  = useState<any>(null);   // Boss Mode
-  const prefetchedQuestionsRef = useRef<any>(null);
-  const challengeBundleRef     = useRef<any>(null); // ⚡ prefetch bundle (config+boss+questions)
-  const playerStatsPrefetchRef = useRef<any>(null); // ⚡ prefetch playerStats หลังรู้ studentId
-  const isDirectLink=!!getSetFromUrl();
-  const isChallenge = mode === "challenge";
-  // ── useMemo สำหรับค่าที่คำนวณซ้ำ ──────────────────────────
-  const setFromUrl = React.useMemo(() => getSetFromUrl(), []);
+// ── ซื้อ Artifact ─────────────────────────────────────────
+// data = { studentId, artifactId }
+function buyArtifact(data) {
+  // 1. เช็คว่ามี item นี้ในคลังไหม
+  const libSheet = getSheet("Item_Library");
+  const libRows  = libSheet.getDataRange().getValues().slice(1);
+  const item     = libRows.find(r => String(r[0]).trim() === String(data.artifactId).trim());
+  if (!item) return ok({ success: false, error: "ไม่พบ Artifact นี้" });
 
-  // ── โหลด QuizSets + Config + Set พร้อมกันใน 1 useEffect ──
-  // แสดงหน้า setSelect ทันทีก่อน แล้วโหลด data ทีหลัง
-  useEffect(() => {
-    const setId = setFromUrl;
+  const canBuy = item[5] !== false && item[5] !== "FALSE";
+  if (!canBuy) return ok({ success: false, error: "Artifact นี้ไม่สามารถซื้อได้" });
 
-    // ⚡ Boss/Challenge Mode: เริ่ม prefetch bundle ทันทีที่รู้ setId
-    // ไม่ต้องรอ student กรอกรหัสเลย เพราะ config/boss/questions ไม่ต้องใช้ studentId
-    if (setId && isChallenge) {
-      challengeBundleRef.current = apiGet({ action: "getChallengeBundle", setId })
-        .catch(() => null);
+  const lv1Bonuses = _getArtifactBonuses(item, 1);
+  const cost = lv1Bonuses.cost; // ✅ แก้บั๊ก: เดิมอ่าน item[7] (HP) ผิด ต้องเป็น cost ของ Lv.1
+
+  // 2. เช็ค gold
+  const statsSheet = getSheet("Player_Stats");
+  const statsRows  = statsSheet.getDataRange().getValues();
+  let statsRowIdx  = -1;
+  for (let i = 1; i < statsRows.length; i++) {
+    if (String(statsRows[i][1]).trim() === String(data.studentId).trim()) {
+      statsRowIdx = i; break;
     }
+  }
+  if (statsRowIdx === -1) return ok({ success: false, error: "ไม่พบนักเรียน" });
 
-    if (setId) {
-      Promise.all([
-        apiGet({ action: "getConfig", setId }),
-        isChallenge ? Promise.resolve({ sets: [] }) : apiGet({ action: "getQuizSets" }),
-      ]).then(([cfgData, setsData]) => {
-        if (cfgData.config) { setTheme(buildTheme(cfgData.config)); setCachedConfig(cfgData.config); }
-        if (setsData.sets?.length) setQuizSets(setsData.sets);
-        if (isChallenge) {
-          setSet({ id: setId, name: setId, total: 0, passingScore: 0, timeLimit: 0 });
-          setScreen("login");
-        } else {
-          const sets = setsData.sets || [];
-          const found = sets.find((s: any) => s.id === setId);
-          if (found) { setSet(found); setScreen("login"); }
-          else setScreen("setSelect");
-        }
-      }).catch(() => setScreen("setSelect"));
-    } else {
-      // ✅ แสดงหน้า setSelect ทันที ไม่รอ API
-      setScreen("setSelect");
-      // โหลด quizSets ใน background
-      apiGet({ action: "getQuizSets" })
-        .then((data: any) => { if (data.sets?.length) setQuizSets(data.sets); })
-        .catch(() => {});
+  const currentGold = Number(statsRows[statsRowIdx][3]) || 0;
+  if (currentGold < cost) return ok({ success: false, error: "Gold ไม่พอ" });
+
+  // 3. เช็คว่ามี Artifact นี้อยู่แล้วไหม
+  const invSheet = getSheet("Player_Inventory");
+  const invRows  = invSheet.getDataRange().getValues().slice(1);
+  const existing = invRows.find(r =>
+    String(r[0]).trim() === String(data.studentId).trim() &&
+    String(r[1]).trim() === String(data.artifactId).trim()
+  );
+
+  if (existing) {
+    // มีอยู่แล้ว → แปลงเป็น Gold 300
+    statsSheet.getRange(statsRowIdx + 1, 4).setValue(currentGold + 300);
+    _logGoldTransaction(data.studentId, 300, "Duplicate Artifact → Gold: " + data.artifactId);
+    return ok({ success: true, duplicate: true, goldReceived: 300 });
+  }
+
+  // 4. หัก Gold + เพิ่ม Inventory
+  statsSheet.getRange(statsRowIdx + 1, 4).setValue(currentGold - cost);
+
+  invSheet.appendRow([
+    data.studentId,
+    item[0], // ArtifactID
+    item[1], // Name
+    1,       // Level
+    lv1Bonuses.hp,
+    lv1Bonuses.atk,
+    lv1Bonuses.def,
+    lv1Bonuses.spd,
+    lv1Bonuses.question,
+  ]);
+
+  _logGoldTransaction(data.studentId, -cost, "Buy Artifact: " + item[1]);
+  _updatePlayerStats(data.studentId);
+
+  return ok({ success: true, duplicate: false, goldSpent: cost });
+}
+
+// ── อัพเกรด Artifact ──────────────────────────────────────
+// data = { studentId, artifactId }
+function upgradeArtifact(data) {
+  const invSheet = getSheet("Player_Inventory");
+  const invRows  = invSheet.getDataRange().getValues();
+  let invRowIdx  = -1;
+
+  for (let i = 1; i < invRows.length; i++) {
+    if (String(invRows[i][0]).trim() === String(data.studentId).trim() &&
+        String(invRows[i][1]).trim() === String(data.artifactId).trim()) {
+      invRowIdx = i; break;
     }
-  }, []);
- // ── 1) โหลดข้อสอบโหมดปกติ (รองรับ Prefetch) ──────────────────
-  useEffect(() => {
-    if (screen !== "loading" || !selectedSet || !student || isChallenge) return;
-    setLoadError("");
-    const run = async () => {
-      try {
-        // ✅ ถ้า prefetch เสร็จแล้ว ใช้เลย ไม่ต้อง fetch ใหม่
-        const cached = prefetchedQuestionsRef.current;
-        const [qData, cfgData] = cached
-          ? cached
-          : await Promise.all([
-              apiGet({ action: "getQuestions", setName: selectedSet.id }),
-              cachedConfig
-                ? Promise.resolve({ config: cachedConfig })
-                : apiGet({ action: "getConfig", setId: selectedSet.id }),
-            ]);
-        
-        prefetchedQuestionsRef.current = null; // ล้าง cache หลังนำไปใช้แล้ว
+  }
+  if (invRowIdx === -1) return ok({ success: false, error: "ไม่มี Artifact นี้" });
 
-        if (!qData.questions?.length) {
-          setLoadError("ไม่พบข้อสอบในชุด " + selectedSet.id);
-          return;
+  const currentLv = Number(invRows[invRowIdx][3]) || 1;
+
+  // ดึงข้อมูล Item Library
+  const libSheet = getSheet("Item_Library");
+  const libRows  = libSheet.getDataRange().getValues().slice(1);
+  const item     = libRows.find(r => String(r[0]).trim() === String(data.artifactId).trim());
+  if (!item) return ok({ success: false, error: "ไม่พบ Artifact ในคลัง" });
+
+  const maxLv  = parseInt(item[2]) || 1;
+  const isSpec = item[3] === true || item[3] === "TRUE";
+
+  if (isSpec) return ok({ success: false, error: "Artifact พิเศษ อัพเกรดไม่ได้" });
+  if (currentLv >= maxLv) return ok({ success: false, error: "Artifact อยู่ Level สูงสุดแล้ว" });
+
+  const nextLv      = currentLv + 1;
+  const nextBonuses = _getArtifactBonuses(item, nextLv);
+  const upgradeCost = nextBonuses.cost;
+
+  // เช็ค Gold
+  const statsSheet = getSheet("Player_Stats");
+  const statsRows  = statsSheet.getDataRange().getValues();
+  let statsRowIdx  = -1;
+  for (let i = 1; i < statsRows.length; i++) {
+    if (String(statsRows[i][1]).trim() === String(data.studentId).trim()) {
+      statsRowIdx = i; break;
+    }
+  }
+  if (statsRowIdx === -1) return ok({ success: false, error: "ไม่พบนักเรียน" });
+
+  const currentGold = Number(statsRows[statsRowIdx][3]) || 0;
+  if (currentGold < upgradeCost) return ok({ success: false, error: "Gold ไม่พอ" });
+
+  // หัก Gold + อัพ Level + อัพ bonuses
+  statsSheet.getRange(statsRowIdx + 1, 4).setValue(currentGold - upgradeCost);
+  invSheet.getRange(invRowIdx + 1, 4).setValue(nextLv);
+  invSheet.getRange(invRowIdx + 1, 5).setValue(nextBonuses.hp);
+  invSheet.getRange(invRowIdx + 1, 6).setValue(nextBonuses.atk);
+  invSheet.getRange(invRowIdx + 1, 7).setValue(nextBonuses.def);
+  invSheet.getRange(invRowIdx + 1, 8).setValue(nextBonuses.spd);
+  invSheet.getRange(invRowIdx + 1, 9).setValue(nextBonuses.question);
+
+  _logGoldTransaction(data.studentId, -upgradeCost, `Upgrade ${item[1]} Lv${currentLv}→${nextLv}`);
+  _updatePlayerStats(data.studentId);
+
+  return ok({ success: true, newLevel: nextLv, goldSpent: upgradeCost });
+}
+
+// ── แจก Artifact (รางวัล/ระบบ/Admin) ─────────────────────
+// data = { studentId, artifactId, source }
+function grantArtifact(data) {
+  const libSheet = getSheet("Item_Library");
+  const libRows  = libSheet.getDataRange().getValues().slice(1);
+  const item     = libRows.find(r => String(r[0]).trim() === String(data.artifactId).trim());
+  if (!item) return ok({ success: false, error: "ไม่พบ Artifact" });
+
+  // เช็คว่ามีอยู่แล้วไหม
+  const invSheet = getSheet("Player_Inventory");
+  const invRows  = invSheet.getDataRange().getValues().slice(1);
+  const existing = invRows.find(r =>
+    String(r[0]).trim() === String(data.studentId).trim() &&
+    String(r[1]).trim() === String(data.artifactId).trim()
+  );
+
+  if (existing) {
+    // แปลงเป็น Gold 300
+    _addGold(data.studentId, 300, "Duplicate Grant → Gold: " + item[1]);
+    return ok({ success: true, duplicate: true, goldReceived: 300 });
+  }
+
+  const isSpec  = item[3] === true || item[3] === "TRUE";
+  const maxLv   = isSpec ? parseInt(item[2]) || 1 : 1;
+  const bonuses = _getArtifactBonuses(item, maxLv);
+
+  invSheet.appendRow([
+    data.studentId,
+    item[0], item[1],
+    maxLv,   // Special = Lv.Max ทันที
+    bonuses.hp, bonuses.atk, bonuses.def, bonuses.spd, bonuses.question,
+  ]);
+
+  _updatePlayerStats(data.studentId);
+  return ok({ success: true, duplicate: false });
+}
+
+// ── เช็คเงื่อนไข Unlock Artifact อัตโนมัติ ────────────────
+// เช็คว่านักเรียนมีสิทธิ์ได้ Artifact จากการผ่านข้อสอบครบไหม
+// ── เช็คเงื่อนไข PASS: ทั้งหมด — ไม่แจกอัตโนมัติ แค่บอกว่าใครมีสิทธิ์รับ ──
+// ใช้ในหน้า Shop: แสดงเงื่อนไข + ปุ่ม "รับ" ถ้าเงื่อนไขครบ
+function getUnlockConditions(studentId) {
+  const libSheet     = getSheet("Item_Library");
+  const libRows      = libSheet.getDataRange().getValues().slice(1);
+  const invSheet     = getSheet("Player_Inventory");
+  const invRows      = invSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[0]).trim() === String(studentId).trim());
+  const ownedIds     = new Set(invRows.map(r => String(r[1]).trim()));
+
+  const resultsSheet = getSheet("QuizResults");
+  const resultsRows  = resultsSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[1]).trim() === String(studentId).trim() && r[7] === "ผ่าน");
+  const passedSets   = new Set(resultsRows.map(r => String(r[4]).trim()));
+
+  const conditions = libRows
+    .filter(item => item[0] && item[6] && String(item[6]).trim().startsWith("PASS:"))
+    .filter(item => !ownedIds.has(String(item[0]).trim())) // ไม่แสดงถ้ามีแล้ว
+    .map(item => {
+      const conditionRaw = String(item[6]).trim().replace("PASS:", "");
+      const required     = conditionRaw.split(",").map(s => s.trim()).filter(Boolean);
+      const met           = required.every(s => passedSets.has(s));
+      return {
+        artifactId:   String(item[0]),
+        name:         String(item[1]),
+        conditionText: "ผ่าน: " + required.join(", "),
+        required,
+        met,
+      };
+    });
+
+  return ok({ conditions });
+}
+
+// ── รับ Artifact จากเงื่อนไขที่ปลดล็อกแล้ว (ปุ่ม "รับ" ในร้านค้า) ──
+// data = { studentId, artifactId }
+function claimArtifact(data) {
+  const libSheet = getSheet("Item_Library");
+  const libRows  = libSheet.getDataRange().getValues().slice(1);
+  const item     = libRows.find(r => String(r[0]).trim() === String(data.artifactId).trim());
+  if (!item) return ok({ success: false, error: "ไม่พบ Artifact นี้" });
+
+  const conditionRaw = item[6] ? String(item[6]).trim() : "";
+  if (!conditionRaw.startsWith("PASS:")) {
+    return ok({ success: false, error: "Artifact นี้ไม่มีเงื่อนไขให้กดรับ" });
+  }
+
+  // ตรวจสอบเงื่อนไขซ้ำอีกครั้งฝั่ง Server กันโกง
+  const required     = conditionRaw.replace("PASS:", "").split(",").map(s => s.trim()).filter(Boolean);
+  const resultsSheet = getSheet("QuizResults");
+  const resultsRows  = resultsSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[1]).trim() === String(data.studentId).trim() && r[7] === "ผ่าน");
+  const passedSets   = new Set(resultsRows.map(r => String(r[4]).trim()));
+  const allPassed    = required.every(s => passedSets.has(s));
+
+  if (!allPassed) return ok({ success: false, error: "เงื่อนไขยังไม่ครบ" });
+
+  // เงื่อนไขครบ → แจก (grantArtifact จัดการเรื่องซ้ำ → Gold 300 ให้เอง)
+  return grantArtifact({ studentId: data.studentId, artifactId: data.artifactId, source: "ClaimShop" });
+}
+
+// ── ตั้งค่า Artifact คู่หู (Companion) ──────────────────────
+// data = { studentId, artifactId }  — ส่ง artifactId ว่าง "" เพื่อยกเลิกคู่หู
+//
+// เพิ่ม Column N ใน Sheet "Player_Stats": CompanionArtifactId
+//
+function setCompanion(data) {
+  const statsSheet = getSheet("Player_Stats");
+  const statsRows  = statsSheet.getDataRange().getValues();
+  let rowIdx = -1;
+  for (let i = 1; i < statsRows.length; i++) {
+    if (String(statsRows[i][1]).trim() === String(data.studentId).trim()) { rowIdx = i; break; }
+  }
+  if (rowIdx === -1) return ok({ success: false, error: "ไม่พบนักเรียน" });
+
+  // ถ้าระบุ artifactId ต้องเช็คว่าผู้เล่นมี Artifact นี้จริง
+  if (data.artifactId) {
+    const invSheet = getSheet("Player_Inventory");
+    const invRows  = invSheet.getDataRange().getValues().slice(1);
+    const owns = invRows.some(r =>
+      String(r[0]).trim() === String(data.studentId).trim() &&
+      String(r[1]).trim() === String(data.artifactId).trim()
+    );
+    if (!owns) return ok({ success: false, error: "คุณไม่มี Artifact นี้" });
+  }
+
+  statsSheet.getRange(rowIdx + 1, 14).setValue(data.artifactId || ""); // Column N (index 13 → col 14)
+  return ok({ success: true, companionArtifactId: data.artifactId || "" });
+}
+
+// ============================================================
+// SHOP BUNDLE — โหลดทุกอย่างที่หน้า Shop ต้องใช้ใน 1 call
+// ============================================================
+// ⚡ Optimized: อ่านแต่ละ Sheet แค่ครั้งเดียว (เดิมอ่าน Item_Library
+// และ Player_Inventory ซ้ำ 2 รอบผ่าน wrapper function คนละตัว)
+// และคำนวณ object ตรงๆ แทนการยิง JSON.stringify/parse ผ่าน ContentService
+function getShopBundle(studentId) {
+  // 1. Item_Library — ใช้ cache เดิมถ้ามี ไม่งั้นอ่านจาก Sheet ครั้งเดียว
+  let library = cacheGet("itemLibrary")?.items;
+  if (!library) {
+    const libSheet = getSheet("Item_Library");
+    const libRows  = libSheet.getDataRange().getValues().slice(1);
+    library = libRows
+      .filter(r => r[0])
+      .map(r => {
+        const maxLv  = parseInt(r[2]) || 1;
+        const isSpec = r[3] === true || r[3] === "TRUE";
+        const levels = [];
+        for (let lv = 0; lv < maxLv; lv++) {
+          const base = 7 + lv * 7;
+          levels.push({
+            level: lv + 1,
+            hp: Number(r[base]) || 0, atk: Number(r[base+1]) || 0,
+            def: Number(r[base+2]) || 0, spd: Number(r[base+3]) || 0,
+            question: Number(r[base+4]) || 0, cost: Number(r[base+5]) || 0,
+            imageUrl: r[base+6] ? getFastImageUrl(String(r[base+6])) : "",
+          });
         }
+        return {
+          artifactId: String(r[0]), name: String(r[1]), maxLevel: maxLv,
+          isSpecial: isSpec, description: r[4] ? String(r[4]) : "",
+          canBuy: r[5] !== false && r[5] !== "FALSE",
+          unlockCondition: r[6] ? String(r[6]) : "",
+          levels,
+        };
+      });
+    cacheSet("itemLibrary", { items: library });
+  }
 
-        const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
-        setQuestions(
-          shouldShuffle
-            ? selectQuestions(qData.questions, selectedSet.total)
-            : orderQuestions(qData.questions, selectedSet.total)
-        );
-        setTheme(buildTheme(cfgData.config));
-        setScreen("quiz");
-      } catch {
-        setLoadError("โหลดข้อสอบไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+  // 2. Player_Inventory — อ่านครั้งเดียว ใช้ร่วมกันทั้ง inventory + ownedIds
+  const invSheet = getSheet("Player_Inventory");
+  const invRowsAll = invSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[0]).trim() === String(studentId).trim());
+  const inventory = invRowsAll.map(r => ({
+    studentId: String(r[0]), artifactId: String(r[1]), artifactName: String(r[2]),
+    level: Number(r[3]) || 1,
+    bonuses: {
+      hp: Number(r[4]) || 0, atk: Number(r[5]) || 0, def: Number(r[6]) || 0,
+      spd: Number(r[7]) || 0, question: Number(r[8]) || 0,
+    }
+  }));
+  const ownedIds = new Set(inventory.map(i => i.artifactId));
+
+  // 3. Player_Stats
+  const statsSheet = getSheet("Player_Stats");
+  const statsRow = statsSheet.getDataRange().getValues().slice(1)
+    .find(r => String(r[1]).trim() === String(studentId).trim());
+  const stats = statsRow ? {
+    studentId: String(statsRow[1]), exp: Number(statsRow[2]) || 0, gold: Number(statsRow[3]) || 0,
+    base: { hp: Number(statsRow[4]) || 1, atk: Number(statsRow[5]) || 1, def: Number(statsRow[6]) || 1, spd: Number(statsRow[7]) || 1 },
+    effective: {
+      hp: Number(statsRow[8]) || 1, atk: Number(statsRow[9]) || 1,
+      def: Number(statsRow[10]) || 1, spd: Number(statsRow[11]) || 1,
+      question: Number(statsRow[12]) || 0,
+    },
+    companionArtifactId: statsRow[13] ? String(statsRow[13]).trim() : "",
+  } : null;
+
+  // 4. QuizResults — เฉพาะที่ต้องใช้เช็คเงื่อนไข PASS:
+  const resultsSheet = getSheet("QuizResults");
+  const passedSets = new Set(
+    resultsSheet.getDataRange().getValues().slice(1)
+      .filter(r => String(r[1]).trim() === String(studentId).trim() && r[7] === "ผ่าน")
+      .map(r => String(r[4]).trim())
+  );
+
+  // 5. คำนวณ conditions จาก library ที่มีอยู่แล้ว (ไม่อ่าน Sheet ซ้ำ)
+  const conditions = library
+    .filter(item => item.unlockCondition && item.unlockCondition.startsWith("PASS:"))
+    .filter(item => !ownedIds.has(item.artifactId))
+    .map(item => {
+      const required = item.unlockCondition.replace("PASS:", "").split(",").map(s => s.trim()).filter(Boolean);
+      return {
+        artifactId: item.artifactId, name: item.name,
+        conditionText: "ผ่าน: " + required.join(", "),
+        required, met: required.every(s => passedSets.has(s)),
+      };
+    });
+
+  return ok({ library, inventory, stats, conditions });
+}
+
+
+// ── Player Stats ──────────────────────────────────────────
+//
+// Sheet "Player_Stats":
+// A: ลำดับ  B: StudentID  C: EXP  D: Gold
+// E: HP base  F: ATK base  G: DEF base  H: SPD base
+// I: HP สุทธิ  J: ATK สุทธิ  K: DEF สุทธิ  L: SPD สุทธิ
+// M: Question bonus รวม (จาก Artifacts)
+// N: CompanionArtifactId ← ใหม่! Patch 4.0 (ArtifactID ที่ตั้งเป็นคู่หู)
+// (I-L คำนวณจาก base + sum ของ Inventory bonus)
+//
+function getPlayerStats(studentId) {
+  const sheet = getSheet("Player_Stats");
+  const rows  = sheet.getDataRange().getValues().slice(1);
+  const row   = rows.find(r => String(r[1]).trim() === String(studentId).trim());
+  if (!row) return ok({ stats: null });
+
+  return ok({
+    stats: {
+      studentId: String(row[1]),
+      exp:       Number(row[2]) || 0,
+      gold:      Number(row[3]) || 0,
+      base: {
+        hp:  Number(row[4]) || 1,
+        atk: Number(row[5]) || 1,
+        def: Number(row[6]) || 1,
+        spd: Number(row[7]) || 1,
+      },
+      effective: {
+        hp:       Number(row[8])  || 1,
+        atk:      Number(row[9])  || 1,
+        def:      Number(row[10]) || 1,
+        spd:      Number(row[11]) || 1,
+        question: Number(row[12]) || 0,
+      },
+      companionArtifactId: row[13] ? String(row[13]).trim() : "",
+    }
+  });
+}
+
+// ── อัพเดท effective stats ของนักเรียน (รวม Artifact bonus) ─
+function _updatePlayerStats(studentId) {
+  const statsSheet = getSheet("Player_Stats");
+  const statsRows  = statsSheet.getDataRange().getValues();
+  let statsRowIdx  = -1;
+  for (let i = 1; i < statsRows.length; i++) {
+    if (String(statsRows[i][1]).trim() === String(studentId).trim()) {
+      statsRowIdx = i; break;
+    }
+  }
+  if (statsRowIdx === -1) return;
+
+  // รวม bonus จาก Inventory
+  const invSheet = getSheet("Player_Inventory");
+  const invRows  = invSheet.getDataRange().getValues().slice(1)
+    .filter(r => String(r[0]).trim() === String(studentId).trim());
+
+  let totalHp = 0, totalAtk = 0, totalDef = 0, totalSpd = 0, totalQ = 0;
+  invRows.forEach(r => {
+    totalHp  += Number(r[4]) || 0;
+    totalAtk += Number(r[5]) || 0;
+    totalDef += Number(r[6]) || 0;
+    totalSpd += Number(r[7]) || 0;
+    totalQ   += Number(r[8]) || 0;
+  });
+
+  const baseHp  = Number(statsRows[statsRowIdx][4]) || 1;
+  const baseAtk = Number(statsRows[statsRowIdx][5]) || 1;
+  const baseDef = Number(statsRows[statsRowIdx][6]) || 1;
+  const baseSpd = Number(statsRows[statsRowIdx][7]) || 1;
+
+  // อัพ effective stats (col I-M = 9-13)
+  statsSheet.getRange(statsRowIdx + 1, 9).setValue(baseHp  + totalHp);
+  statsSheet.getRange(statsRowIdx + 1, 10).setValue(baseAtk + totalAtk);
+  statsSheet.getRange(statsRowIdx + 1, 11).setValue(baseDef + totalDef);
+  statsSheet.getRange(statsRowIdx + 1, 12).setValue(baseSpd + totalSpd);
+  statsSheet.getRange(statsRowIdx + 1, 13).setValue(totalQ);
+}
+
+// ── Gold helpers ──────────────────────────────────────────
+function _addGold(studentId, amount, reason) {
+  const sheet = getSheet("Player_Stats");
+  const rows  = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1]).trim() === String(studentId).trim()) {
+      const cur = Number(rows[i][3]) || 0;
+      sheet.getRange(i + 1, 4).setValue(cur + amount);
+      _logGoldTransaction(studentId, amount, reason);
+      return;
+    }
+  }
+}
+
+function _logGoldTransaction(studentId, amount, reason) {
+  const sheet = getOrCreateSheet("GoldLog", [
+    "Timestamp","StudentID","Amount","Reason","Balance"
+  ]);
+  // หา balance ปัจจุบัน
+  const statsSheet = getSheet("Player_Stats");
+  const statsRows  = statsSheet.getDataRange().getValues().slice(1);
+  const row        = statsRows.find(r => String(r[1]).trim() === String(studentId).trim());
+  const balance    = row ? Number(row[3]) || 0 : 0;
+  sheet.appendRow([new Date(), studentId, amount, reason, balance]);
+}
+
+// ── ดึง bonus ของ Artifact ตาม Level ──────────────────────
+function _getArtifactBonuses(itemRow, level) {
+  // itemRow คือ array ของ row ใน Item_Library
+  // Level data เริ่มที่ index 7 (col H) ทุก 7 cols
+  const base = 7 + (level - 1) * 7;
+  return {
+    hp:       Number(itemRow[base])   || 0,
+    atk:      Number(itemRow[base+1]) || 0,
+    def:      Number(itemRow[base+2]) || 0,
+    spd:      Number(itemRow[base+3]) || 0,
+    question: Number(itemRow[base+4]) || 0,
+    cost:     Number(itemRow[base+5]) || 0,
+    imageUrl: itemRow[base+6] ? getFastImageUrl(String(itemRow[base+6])) : "",
+  };
+}
+
+// ============================================================
+// EXISTING FUNCTIONS (คงเดิม)
+// ============================================================
+
+function getQuestions(setName) {
+  const cacheKey = "questions_" + (setName || "all");
+  const cached = cacheGet(cacheKey);
+  if (cached) return ok(cached);
+  const sheet = getSheet("QuestionBank");
+  const rows  = sheet.getDataRange().getValues().slice(1);
+  const questions = rows
+    .filter(r => r[0] && (!setName || r[2] === setName))
+    .map(r => {
+      const qType = r[14] ? String(r[14]).trim().toLowerCase() : "mc";
+      const isText = qType === "text";
+      const pts = r[15] ? parseFloat(r[15]) : 1;
+      return {
+        id:                String(r[0]),
+        groupId:           String(r[1]),
+        setName:           String(r[2]),
+        setText:           r[3]  ? String(r[3])  : "",
+        imageId:           r[4]  ? String(r[4])  : "",
+        imageUrl:          r[4]  ? getFastImageUrl(String(r[4])) : "",
+        choices:           isText ? [] : [String(r[5]),String(r[6]),String(r[7]),String(r[8])],
+        answer:            isText ? -1 : parseInt(r[9]) - 1,
+        correctTextAnswer: isText ? String(r[9]) : "",
+        questionType:      isText ? "text" : "mc",
+        isRare:            r[10] === true || r[10] === "TRUE" || r[10] === "true",
+        seriesId:          r[11] ? String(r[11]) : "",
+        linkText:          r[12] ? String(r[12]) : "",
+        linkVideo:         r[13] ? String(r[13]) : "",
+        points:            isNaN(pts) ? 1 : pts,
+        solutionText:      r[16] ? String(r[16]) : "",
+      };
+    });
+  const result = { questions };
+  cacheSet(cacheKey, result);
+  return ok(result);
+}
+
+function getStudent(studentId) {
+  const sheet = getSheet("Identity");
+  const rows  = sheet.getDataRange().getValues().slice(1);
+  const row   = rows.find(r =>
+    String(r[1]).trim().replace(/\s/g,"") === String(studentId).trim().replace(/\s/g,"")
+  );
+  if (!row) return ok({ error: "ไม่พบรหัสนักเรียน" });
+  return ok({
+    student: {
+      rank: row[0], id: String(row[1]), fullName: String(row[2]),
+      firstName: String(row[3]), lastName: String(row[4]),
+      nickname: String(row[5]), title: row[6] ? String(row[6]) : "",
+    }
+  });
+}
+
+function getConfig(setId) {
+  const cacheKey = "config_" + setId;
+  const cached = cacheGet(cacheKey);
+  if (cached) return ok(cached);
+
+  try {
+    const sheet = getSheet("QuizConfig");
+    const rows  = sheet.getDataRange().getValues().slice(1);
+    const row   = rows.find(r => String(r[0]).trim() === String(setId).trim());
+    if (!row) return ok({ config: null });
+    const bgImageId = row[5] ? String(row[5]).trim() : "";
+    const result = {
+      config: {
+        logoEmoji:        row[1] ? String(row[1]) : "⚔",
+        themeColor:       row[2] ? String(row[2]) : "#d4af37",
+        fontSize:         row[3] ? String(row[3]) : "22px",
+        bgColor:          row[4] ? String(row[4]) : "#0d0803",
+        bgImageUrl:       bgImageId ? getFastImageUrl(bgImageId) : "",
+        shuffleQuestions: row[6] !== false && row[6] !== "FALSE",
       }
     };
-    run();
-  }, [screen, cachedConfig]);
+    cacheSet(cacheKey, result);
+    return ok(result);
+  } catch { return ok({ config: null }); }
+}
 
-  // ── 2) โหลดข้อสอบโหมด Challenge + Boss (รวม 1 call) ────
-  useEffect(() => {
-    if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
-    setLoadError("");
-    (async () => {
-      try {
-        // ⚡ ใช้ค่าที่ prefetch ไว้แล้วถ้ามี ไม่งั้นค่อย fetch ใหม่ (fallback)
-        const bundlePromise = challengeBundleRef.current
-          ?? apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
-        const statsPromise = playerStatsPrefetchRef.current
-          ?? apiGet({ action: "getPlayerStats", studentId: student.id });
-
-        const [data, statsData] = await Promise.all([bundlePromise, statsPromise]);
-
-        challengeBundleRef.current     = null; // ล้าง cache หลังใช้
-        playerStatsPrefetchRef.current = null;
-
-        if (data.error) { setLoadError(data.error); return; }
-        setChallengeConfig(data.challengeConfig);
-        setActiveBoss(data.boss || null);
-        // ใช้ playerStats จาก call แยก (สดกว่า) ถ้ามี ไม่งั้น fallback เป็นของ bundle
-        setPlayerStats(statsData?.stats || data.playerStats || null);
-        const pool = shuffle(data.questions || []);
-        if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
-        setChallengePool(pool);
-        setScreen("challenge");
-      } catch {
-        setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+function getCharacter(setId) {
+  try {
+    const sheet = getSheet("CharacterConfig");
+    const rows  = sheet.getDataRange().getValues().slice(1);
+    const row   = rows.find(r => String(r[0]).trim() === String(setId).trim());
+    if (!row) return ok({ character: null });
+    return ok({
+      character: {
+        setId: String(row[0]),
+        passImageId:    row[1] ? String(row[1]).trim() : "",
+        failImageId:    row[2] ? String(row[2]).trim() : "",
+        perfectImageId: row[3] ? String(row[3]).trim() : "",
+        passMsg:    row[4] ? String(row[4]) : "ผ่านแล้ว! 🎉",
+        failMsg:    row[5] ? String(row[5]) : "สู้ต่อไปนะ! 💪",
+        perfectMsg: row[6] ? String(row[6]) : "เต็มทุกข้อ! 🌟",
       }
-    })();
-  }, [screen]);
-  
-  const goHome = useCallback(() => {
-    setResult(null); setQuestions([]);
-    setChallengeResult(null); setChallengePool([]);
-    setCachedConfig(null);
-    setActiveBoss(null); setPlayerStats(null);
-    if(isDirectLink){ setStudent(null); setScreen("login"); }
-    else { setSet(null); setStudent(null); setScreen("setSelect"); }
-  }, [isDirectLink]);
+    });
+  } catch { return ok({ character: null }); }
+}
 
-  const goRetry = useCallback(() => {
-    setQuestions([]); setResult(null);
-    setChallengeResult(null); setChallengePool([]);
-    setScreen("loading");
-  }, []);
+function getChallengeConfig(setId) {
+  try {
+    const sheet = getSheet("QuizConfig");
+    const rows  = sheet.getDataRange().getValues().slice(1);
+    const row   = rows.find(r => String(r[0]).trim() === String(setId).trim());
+    if (!row) return ok({ challengeConfig: null });
+    const rawSets     = row[7] ? String(row[7]) : "";
+    const challengeSets = rawSets.split(",").map(s=>s.trim()).filter(Boolean);
+    const maxQ        = row[8]  ? parseInt(row[8])  : 0;
+    const lives       = row[9]  ? parseInt(row[9])  : 3;
+    const name        = row[10] ? String(row[10])   : "";
+    const logoEmoji = row[11] ? String(row[11]).trim() : "";
+const logoImageId = row[12] ? String(row[12]).trim() : "";
+const bossName    = row[17] ? String(row[17]).trim() : "";
 
-  const tc=theme.themeColor;
-  const bg=theme.bgImageUrl
-    ?`url(${theme.bgImageUrl}) center/cover fixed, ${theme.bgColor}`
-    :`radial-gradient(ellipse at 20% 50%,rgba(55,32,8,.45) 0%,transparent 60%),${theme.bgColor}`;
+return ok({
+  challengeConfig: {
+    setId: String(row[0]), challengeSets,
+    maxQuestions: isNaN(maxQ) ? 0 : maxQ,
+    lives: isNaN(lives) ? 3 : lives,
+    challengeName: name || String(row[0]),
+    logoEmoji, logoImageId,
+    logoImageUrl: logoImageId ? getFastImageUrl(logoImageId) : "",
+    bossName,
+      }
+    });
+  } catch { return ok({ challengeConfig: null }); }
+}
 
-  if(screen==="init") return <div style={{minHeight:"100vh",background:theme.bgColor}}/>;
+function getQuizSets() {
+  // ── Cache hit ──────────────────────────────────────────
+  const cached = cacheGet("quizSets");
+  if (cached) return ok(cached);
 
-  return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700&family=Sarabun:wght@400;600&display=swap');
-        *{margin:0;padding:0;box-sizing:border-box;}
-        body{background:${theme.bgColor};}
-        @keyframes pfloat{0%,100%{transform:translateY(0)scale(1);opacity:.3}50%{transform:translateY(-18px)scale(1.2);opacity:.65}}
-        @keyframes pspin{to{transform:rotate(360deg)}}
-        @keyframes heartshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
-        @keyframes dmgFloat{0%{transform:translateX(-50%) translateY(0);opacity:1}100%{transform:translateX(-50%) translateY(-60px);opacity:0}}
-        @keyframes skeletonPulse{0%,100%{opacity:.4}50%{opacity:.8}}
-        input:focus{border-color:${tc}99!important;box-shadow:0 0 0 2px ${tc}22;}
-        button:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
-        button{transition:all .18s;}
-        a:hover{opacity:.8;}
-        ::-webkit-scrollbar{width:5px;}
-        ::-webkit-scrollbar-thumb{background:${tc}44;border-radius:3px;}
-      `}</style>
-      <div style={{minHeight:"100vh",fontFamily:"'Sarabun',sans-serif",background:bg}}>
-        <Particles color={tc}/>
-       {screen==="setSelect"&&(
-          <SetSelectScreen 
-            quizSets={quizSets} // 👈 ส่ง quizSets ที่ดึงจากชีทเข้าไป
-            onSelect={s=>{
-              setSet(s);
-              apiGet({action:"getConfig",setId:s.id}).then(d=>{ 
-                if(d.config) {
-                  setTheme(buildTheme(d.config)); 
-                  setCachedConfig(d.config); 
-                } 
-              });
-              setScreen("login");
-            }} 
-            theme={theme}
-          />
-        )}
-        {screen==="login"&&selectedSet&&(
-  <LoginScreen 
-    set={selectedSet} 
-    theme={theme} 
-    isDirectLink={isDirectLink}
-    isChallenge={isChallenge} 
-    challengeConfig={challengeConfig}
-    challengeLabel={challengeConfig?.challengeName}
-    cachedConfig={cachedConfig}
-    prefetchedQuestionsRef={prefetchedQuestionsRef}
-    playerStatsPrefetchRef={playerStatsPrefetchRef}
-    apiGet={apiGet}
-    onConfirm={st=>{ setStudent(st); setScreen("loading"); }}
-    onBack={()=>{ setSet(null); setScreen("setSelect"); }}
-  />
-)}
-        {screen==="loading"&&(
-          loadError
-            ?<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
-                <div style={{maxWidth:"400px",width:"100%",
-                  background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
-                  border:`2px solid ${tc}55`,borderRadius:"16px",padding:"32px",
-                  boxShadow:"0 20px 60px rgba(0,0,0,.8)",textAlign:"center",position:"relative",zIndex:1}}>
-                  <p style={{color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",marginBottom:"20px"}}>⚠ {loadError}</p>
-                  <button onClick={goHome} style={{width:"100%",padding:"12px",background:`${tc}11`,
-                    border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
-                    fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>กลับหน้าหลัก</button>
-                </div>
-              </div>
-            :<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <Spinner color={tc}/>
-              </div>
-        )}
-        {screen==="quiz"&&selectedSet&&student&&questions.length>0&&(
-          <QuizScreen set={selectedSet} student={student} questions={questions}
-            onFinish={d=>{ setResult(d); setScreen("result"); }} theme={theme}/>
-        )}
-        {screen==="result"&&resultData&&(
-          <ResultScreen data={resultData} onRetry={goRetry} onHome={goHome}
-            isDirectLink={isDirectLink} theme={theme}/>
-        )}
-        {screen==="challenge"&&challengeConfig&&student&&challengePool.length>0&&(
-          <ChallengeScreen key={Date.now()}
-            challengeConfig={challengeConfig} student={student} pool={challengePool}
-            onFinish={d=>{ setChallengeResult(d); setScreen("challenge-result"); }}
-            theme={theme}
-            boss={activeBoss}
-            playerStats={playerStats}
-          />
-        )}
-        {screen==="challenge-result"&&challengeResult&&(
-          <ChallengeResultScreen data={challengeResult} onRetry={goRetry} onHome={goHome} theme={theme}/>
-        )}
-      </div>
-    </>
-  );
+  try {
+    const sheet = getSheet("QuizConfig");
+    const rows  = sheet.getDataRange().getValues().slice(1);
+    const sets  = rows
+      .filter(r => {
+        const setId        = String(r[0]).trim();
+        const challengeSets = r[7] ? String(r[7]).trim() : "";
+        return setId && !setId.startsWith("CHALL-") && !challengeSets;
+      })
+      .map(r => ({
+        id:           String(r[0]).trim(),
+        name:         r[13] ? String(r[13]).trim() : String(r[0]).trim(),
+        total:        r[14] ? parseInt(r[14]) : 10,
+        passingScore: r[15] ? parseInt(r[15]) : 8,
+        timeLimit:    (r[16] ? parseInt(r[16]) : 30) * 60,
+      }));
+    const result = { sets };
+    cacheSet("quizSets", result); // cache 5 นาที
+    return ok(result);
+  } catch(err) { return ok({ sets: [], error: err.message }); }
+}
+
+function saveResult(data) {
+  const sheet = getOrCreateSheet("QuizResults", [
+    "Timestamp","StudentID","ชื่อ-นามสกุล","ชื่อเล่น",
+    "ชุดข้อสอบ","คะแนน","จำนวนข้อถูก","ผ่าน/ไม่ผ่าน",
+    "เวลาที่ใช้(วินาที)","QuestionID ที่ถูก","QuestionID ที่ผิด"
+  ]);
+  sheet.appendRow([
+    new Date(),
+    data.studentId       || "", data.studentName     || "",
+    data.studentNickname || "", data.setName         || "",
+    data.score           || "", data.correctCount    || "",
+    data.passed          || "", data.timeUsed        || 0,
+    data.correctIds      || "", data.wrongIds        || "",
+  ]);
+
+  // หมายเหตุ: ไม่ auto-grant Artifact จากเงื่อนไข PASS: อีกต่อไป
+  // นักเรียนต้องไปกดรับเองที่หน้าร้านค้า (Shop) หลังผ่านเงื่อนไขครบ
+  // ดู getUnlockConditions() และ claimArtifact() ด้านล่าง
+
+  return ok({ success: true });
+}
+
+function saveRareProgressSingle(data) {
+  const sheet = getOrCreateSheet("RareProgress",["StudentID","SeriesID","QuestionIDs","Completed"]);
+  const rows  = sheet.getDataRange().getValues();
+  let found   = false;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0])===String(data.studentId) && String(rows[i][1])===String(data.seriesId)) {
+      const existing = rows[i][2] ? rows[i][2].toString().split(",").filter(Boolean) : [];
+      if (!existing.includes(data.questionId)) existing.push(data.questionId);
+      const completed = isSeriesCompleted(data.seriesId, existing);
+      sheet.getRange(i+1,3).setValue(existing.join(","));
+      sheet.getRange(i+1,4).setValue(completed);
+      found = true; break;
+    }
+  }
+  if (!found) {
+    const completed = isSeriesCompleted(data.seriesId,[data.questionId]);
+    sheet.appendRow([data.studentId, data.seriesId, data.questionId, completed]);
+  }
+  return ok({ success: true });
+}
+
+function getRareProgress(studentId) {
+  try {
+    const sheet    = getSheet("RareProgress");
+    const rows     = sheet.getDataRange().getValues().slice(1);
+    const progress = rows
+      .filter(r => String(r[0])===String(studentId))
+      .map(r => ({
+        seriesId:    String(r[1]),
+        questionIds: r[2] ? r[2].toString().split(",").filter(Boolean) : [],
+        completed:   r[3]===true||r[3]==="TRUE",
+      }));
+    return ok({ progress });
+  } catch { return ok({ progress:[] }); }
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function isSeriesCompleted(seriesId, doneIds) {
+  try {
+    const sheet = getSheet("QuestionBank");
+    const rows  = sheet.getDataRange().getValues().slice(1);
+    const total = rows.filter(r =>
+      String(r[11])===String(seriesId) &&
+      (r[10]===true||r[10]==="TRUE"||r[10]==="true")
+    ).length;
+    return doneIds.length >= total && total > 0;
+  } catch { return false; }
+}
+
+function getFastImageUrl(fileId) {
+  if (!fileId) return "";
+  let id = fileId.trim();
+  if (id.includes("/d/"))      id = id.split("/d/")[1].split("/")[0];
+  else if (id.includes("id=")) id = id.split("id=")[1].split("&")[0];
+  return `https://lh3.googleusercontent.com/d/${id}`;
+}
+
+// ── เปิด Spreadsheet แค่ครั้งเดียวต่อ request แล้ว cache ไว้ใช้ซ้ำ ──
+// เดิม: getSheet() เรียก SpreadsheetApp.openById() ทุกครั้งที่ถูกเรียก
+// ทำให้ 1 request ที่ต้องอ่านหลาย Sheet (เช่น getShopBundle) เปิดซ้ำ 5-6 รอบ
+// รอบละ ~100-300ms → ตอนนี้เปิดครั้งเดียวแล้วใช้ร่วมกันทั้ง request
+let _cachedSpreadsheet = null;
+function getSpreadsheet() {
+  if (!_cachedSpreadsheet) _cachedSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return _cachedSpreadsheet;
+}
+
+function getSheet(name) {
+  const s = getSpreadsheet().getSheetByName(name);
+  if (!s) throw new Error(`ไม่พบ Sheet ชื่อ "${name}"`);
+  return s;
+}
+
+function getOrCreateSheet(name, headers) {
+  const ss = getSpreadsheet();
+  let s    = ss.getSheetByName(name);
+  if (!s) { s = ss.insertSheet(name); s.appendRow(headers); }
+  return s;
+}
+
+function ok(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ============================================================
+// TRIGGERS — ตั้งใน Apps Script > Triggers
+// ============================================================
+// dailyBossRegen → Time-based → Day timer → Midnight (00:00)
+// keepAlive      → Time-based → Minutes timer → Every 5 minutes
+
+// ── Keep-Alive: ป้องกัน Cold Start ──────────────────────────
+function keepAlive() {
+  Logger.log("alive: " + new Date());
+}
+
+// ============================================================
+// BUNDLE — โหลดทุกอย่างใน 1 call (เร็วกว่าเรียกแยก 4-5 ครั้ง)
+// ============================================================
+function getChallengeBundle(setId, studentId) {
+  // 1. Challenge Config
+  const cfgRaw = getChallengeConfig(setId);
+  const cfgData = JSON.parse(cfgRaw.getContent());
+  const cc = cfgData.challengeConfig;
+  if (!cc) return ok({ error: "ไม่พบ Challenge Config สำหรับ " + setId });
+
+  // 2. Boss (ถ้ามี bossName)
+  let boss = null;
+  if (cc.bossName) {
+    try {
+      const bossRaw = getActiveBoss(cc.bossName);
+      boss = JSON.parse(bossRaw.getContent()).boss || null;
+    } catch(e) { /* ไม่มีบอส ก็เล่น Challenge ปกติ */ }
+  }
+
+  // 3. PlayerStats
+let playerStats = null;
+if (studentId) {
+  try {
+    const statsResult = getPlayerStats(studentId);
+    const statsContent = statsResult.getContent();
+    const statsData = JSON.parse(statsContent);
+    playerStats = statsData.stats || null;
+    Logger.log("playerStats loaded: " + JSON.stringify(playerStats?.effective));
+  } catch(e) {
+    Logger.log("playerStats error: " + e.message);
+  }
+}
+
+  // 4. Questions (ดึงทุก Set พร้อมกัน)
+  const setIds = cc.challengeSets || [];
+  const allQuestions = [];
+  setIds.forEach(sid => {
+    try {
+      const qRaw = getQuestions(sid);
+      const qData = JSON.parse(qRaw.getContent());
+      (qData.questions || []).forEach(q => allQuestions.push(q));
+    } catch(e) {}
+  });
+
+  return ok({
+    challengeConfig: cc,
+    boss:            boss,
+    playerStats:     playerStats,
+    questions:       allQuestions,
+  });
+}
+
+// ============================================================
+// TEST FUNCTIONS
+// ============================================================
+function testShopBundle() {
+  const r = getShopBundle("691009");
+  Logger.log(r.getContent());
+}
+function testUnlockConditions() {
+  const r = getUnlockConditions("691009");
+  Logger.log(r.getContent());
+}
+function testBossSheet() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("Boss");
+  const rows  = sheet.getDataRange().getValues();
+  Logger.log("จำนวนแถว: " + rows.length);
+  Logger.log("Header: " + JSON.stringify(rows[0]));
+  if (rows.length > 1) Logger.log("แถวที่ 2: " + JSON.stringify(rows[1]));
 }
