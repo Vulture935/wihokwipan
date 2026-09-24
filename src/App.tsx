@@ -80,10 +80,10 @@ function QuestionText({ text }: { text?: string }) {
 // ============================================================
 
 // ============================================================
-// เรียกผ่าน Vercel Cache Proxy (/api/proxy) แทนการยิงตรงไป
-// Apps Script เพื่อลดโหลดตอนคนใช้พร้อมกันเยอะ (ดู api/proxy.js)
+// เรียกผ่าน Vercel Cache Proxy (/api/proxy) เป็นหลัก โดยมี fallback
+// ยิงตรงไป Apps Script อัตโนมัติถ้า proxy ใช้งานไม่ได้ (ดูด้านล่าง
+// ที่ PROXY_URL / DIRECT_SCRIPT_URL / currentBaseUrl())
 // ============================================================
-const APPS_SCRIPT_URL = "/api/proxy";
 
 const LOOKER_STUDIO_URL =
   "https://datastudio.google.com/reporting/c1d52161-5387-4f00-bcda-b70b54116fc5/page/p_h1rlukz72d";
@@ -103,17 +103,50 @@ function getModeFromUrl() {
 }
 
 // ============================================================
-// API — เพิ่ม Timeout + Retry เพื่อความเสถียร
+// API — เพิ่ม Timeout + Retry + Fallback เพื่อความ "เข้าถึงได้เสมอ"
 // ============================================================
-// GET: retry ได้อย่างปลอดภัยเสมอ (read-only ไม่มีผลข้างเคียง)
-// POST: retry เฉพาะตอน network error ก่อนถึง Server เท่านั้น
-//       ไม่ retry ตอน timeout เพราะไม่รู้ว่าคำสั่งไปถึง Server แล้วหรือยัง
-//       (กันบันทึกผลซ้ำ / หักเงินซ้ำ / ตีบอสซ้ำ)
-const REQUEST_TIMEOUT_MS = 15000;
+// หลักการ: ช้าได้ แต่ห้ามค้างแบบไม่มีทางออก
+// - GET: retry ได้หลายครั้งเสมอ (read-only ไม่มีผลข้างเคียง)
+// - POST: retry เฉพาะตอน network error ก่อนถึง Server เท่านั้น
+//   ไม่ retry ตอน timeout เพราะไม่รู้ว่าคำสั่งไปถึง Server แล้วหรือยัง
+//   (กันบันทึกผลซ้ำ / หักเงินซ้ำ / ตีบอสซ้ำ)
+// - ถ้า Vercel Proxy (/api/proxy) พังหลายครั้งติดกัน จะสลับไปยิง
+//   Apps Script ตรงๆ อัตโนมัติ (ไม่ผ่าน cache) เพื่อให้ยังใช้งานได้
+const PROXY_URL         = "/api/proxy";
+const DIRECT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwtjTq25C0pURGGNsPMJ76iAbpzM3R9awJmswQUsQb1NrEG790gZc-_gsvPoXOTcCab/exec";
+const REQUEST_TIMEOUT_MS = 20000; // ใจเย็นขึ้นกว่าเดิม ยอมรอนานขึ้นแลกกับโอกาสสำเร็จสูงขึ้น
+
+let useDirectFallback = false;  // สลับเป็น true ถ้า proxy พังซ้ำๆ
+let proxyFailCount     = 0;
+const PROXY_FAIL_THRESHOLD = 3; // proxy พังติดกันกี่ครั้งถึงจะเลิกใช้ proxy
+
+function currentBaseUrl() {
+  return useDirectFallback ? DIRECT_SCRIPT_URL : PROXY_URL;
+}
+function noteProxyFailure() {
+  if (useDirectFallback) return;
+  proxyFailCount++;
+  if (proxyFailCount >= PROXY_FAIL_THRESHOLD) {
+    useDirectFallback = true;
+    console.warn("Proxy ล้มเหลวซ้ำ — สลับไปยิง Apps Script ตรงแทน");
+  }
+}
+function noteProxySuccess() {
+  proxyFailCount = 0;
+}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function fetchWithRetry(url, options, { retries = 2, retryOnTimeout = true } = {}) {
+// backoff แบบสุ่มเวลาเล็กน้อย (jitter) กันหลายเครื่อง retry พร้อมกันเป๊ะ
+function backoffDelay(attempt) {
+  const base = 700 * (attempt + 1);
+  const jitter = Math.random() * 400;
+  return base + jitter;
+}
+
+// ดึง+parse JSON ทั้งก้อน อยู่ "ใน" การ retry ด้วย เผื่อ response
+// เพี้ยน (เช่น Apps Script คืน HTML error page แทน JSON) ก็ยัง retry ได้
+async function fetchJsonWithRetry(url, options, { retries = 3, retryOnTimeout = true, isRead = true } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
@@ -122,14 +155,18 @@ async function fetchWithRetry(url, options, { retries = 2, retryOnTimeout = true
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res;
+      const text = await res.text();
+      const data = JSON.parse(text); // ถ้า response เพี้ยน (ไม่ใช่ JSON) จะ throw แล้วเข้า retry ต่อ
+      if (isRead) noteProxySuccess();
+      return data;
     } catch (err: any) {
       clearTimeout(timer);
       const isTimeout = err?.name === "AbortError";
       lastErr = err;
+      if (isRead && !useDirectFallback) noteProxyFailure();
       const canRetry = attempt < retries && (retryOnTimeout || !isTimeout);
       if (!canRetry) throw err;
-      await sleep(700 * (attempt + 1)); // รอเพิ่มขึ้นทีละรอบก่อนลองใหม่
+      await sleep(backoffDelay(attempt));
     }
   }
   throw lastErr;
@@ -139,14 +176,36 @@ async function apiGet(params) {
   const query = new URLSearchParams(
     Object.entries(params).reduce((acc,[k,v])=>{ acc[k]=String(v); return acc; },{})
   );
-  const res = await fetchWithRetry(`${APPS_SCRIPT_URL}?${query}`, { method:"GET" },
-    { retries: 2, retryOnTimeout: true });
-  return res.json();
+  try {
+    return await fetchJsonWithRetry(`${currentBaseUrl()}?${query}`, { method:"GET" },
+      { retries: 3, retryOnTimeout: true, isRead: true });
+  } catch (err) {
+    // ✅ ทางสุดท้าย: ถ้าใช้ proxy อยู่และล้มเหลวหมดแล้ว ลองยิงตรงอีกรอบเดียว
+    // ก่อนจะยอมแพ้จริงๆ (เผื่อ proxy พังแต่ Apps Script ยังปกติ)
+    if (!useDirectFallback) {
+      try {
+        const data = await fetchJsonWithRetry(`${DIRECT_SCRIPT_URL}?${query}`, { method:"GET" },
+          { retries: 1, retryOnTimeout: true, isRead: false });
+        return data;
+      } catch { /* ตกไป throw err เดิมด้านล่าง */ }
+    }
+    throw err;
+  }
 }
 async function apiPost(body) {
-  const res = await fetchWithRetry(APPS_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) },
-    { retries: 1, retryOnTimeout: false });
-  return res.json();
+  try {
+    return await fetchJsonWithRetry(currentBaseUrl(), { method:"POST", body:JSON.stringify(body) },
+      { retries: 1, retryOnTimeout: false, isRead: false });
+  } catch (err) {
+    // POST ก็ยอม fallback ไปยิงตรงได้เช่นกันถ้า proxy เจ๊งจริงๆ (ยังไม่ retry ซ้ำที่ timeout เหมือนเดิม)
+    if (!useDirectFallback && currentBaseUrl() !== DIRECT_SCRIPT_URL) {
+      try {
+        return await fetchJsonWithRetry(DIRECT_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) },
+          { retries: 0, retryOnTimeout: false, isRead: false });
+      } catch { /* ตกไป throw err เดิมด้านล่าง */ }
+    }
+    throw err;
+  }
 }
 
 function shuffle(arr) {
@@ -1824,7 +1883,7 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
   );
 }
 
-export default function App() {
+function WihokWiphanApp() {
   const [screen,setScreen]=useState("init");
   const [quizSets, setQuizSets] = useState([]); 
   const [selectedSet,setSet]=useState(null);
@@ -1832,6 +1891,8 @@ export default function App() {
   const [questions,setQuestions]=useState([]);
   const [resultData,setResult]=useState(null);
   const [loadError,setLoadError]=useState("");
+  const [retryTrigger, setRetryTrigger] = useState(0); // ⚡ กดแล้ว trigger โหลดใหม่โดยไม่ออกจากหน้า
+  const [loadingTooLong, setLoadingTooLong] = useState(false); // แสดงปุ่มลองใหม่ถ้าโหลดนานผิดปกติ
   const [theme,setTheme]=useState(DEFAULT_THEME);
   const [mode]=useState(()=>getModeFromUrl());
   const [challengeConfig,setChallengeConfig]=useState(null);
@@ -1890,24 +1951,41 @@ export default function App() {
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || isChallenge) return;
     setLoadError("");
+    setLoadingTooLong(false);
+
+    // ⏱️ ถ้าโหลดนานเกิน 20 วินาที แสดงปุ่ม "ลองใหม่" ให้กดเองได้
+    // (retry อัตโนมัติเบื้องหลังยังทำงานต่อ อันนี้แค่เพิ่มทางออกให้ผู้ใช้)
+    const stuckTimer = setTimeout(() => setLoadingTooLong(true), 20000);
+
     const run = async () => {
       try {
-        // ✅ ถ้า prefetch เสร็จแล้ว ใช้เลย ไม่ต้อง fetch ใหม่
-        const cached = prefetchedQuestionsRef.current;
-        const [qData, cfgData] = cached
-          ? cached
-          : await Promise.all([
-              apiGet({ action: "getQuestions", setName: selectedSet.id }),
-              cachedConfig
-                ? Promise.resolve({ config: cachedConfig })
-                : apiGet({ action: "getConfig", setId: selectedSet.id }),
-            ]);
-        
+        // ✅ ถ้า prefetch เสร็จแล้ว ใช้เลย ไม่ต้อง fetch ใหม่ (เฉพาะรอบแรกเท่านั้น
+        // ถ้าเป็นการกดลองใหม่ retryTrigger>0 จะไม่ใช้ของเก่าที่อาจพังอยู่)
+        const cached = retryTrigger === 0 ? prefetchedQuestionsRef.current : null;
+        let qData, cfgData;
+
+        if (cached) {
+          [qData, cfgData] = cached;
+        } else {
+          [qData, cfgData] = await Promise.all([
+            apiGet({ action: "getQuestions", setName: selectedSet.id }),
+            cachedConfig && retryTrigger === 0
+              ? Promise.resolve({ config: cachedConfig })
+              : apiGet({ action: "getConfig", setId: selectedSet.id }),
+          ]);
+        }
+
         prefetchedQuestionsRef.current = null; // ล้าง cache หลังนำไปใช้แล้ว
 
+        // 🔁 ถ้าได้ข้อสอบว่างเปล่า อาจเป็นแค่ความผิดพลาดชั่วคราว (เช่น
+        // cache คืนค่าไม่ครบ) ลองอีกรอบก่อนสรุปว่า "ไม่มีข้อสอบจริงๆ"
         if (!qData.questions?.length) {
-          setLoadError("ไม่พบข้อสอบในชุด " + selectedSet.id);
-          return;
+          const retryQData = await apiGet({ action: "getQuestions", setName: selectedSet.id });
+          if (!retryQData.questions?.length) {
+            setLoadError("ไม่พบข้อสอบในชุด " + selectedSet.id);
+            return;
+          }
+          qData = retryQData;
         }
 
         const shouldShuffle = cfgData.config?.shuffleQuestions !== false;
@@ -1923,45 +2001,62 @@ export default function App() {
       }
     };
     run();
-  }, [screen, cachedConfig]);
+
+    return () => clearTimeout(stuckTimer);
+  }, [screen, cachedConfig, retryTrigger]);
 
   // ── 2) โหลดข้อสอบโหมด Challenge + Boss (รวม 1 call) ────
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
     setLoadError("");
+    setLoadingTooLong(false);
+    const stuckTimer = setTimeout(() => setLoadingTooLong(true), 20000);
+
     (async () => {
       try {
-        // ⚡ ใช้ค่าที่ prefetch ไว้แล้วถ้ามี ไม่งั้นค่อย fetch ใหม่ (fallback)
-        const bundlePromise = challengeBundleRef.current
-          ?? apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
-        const statsPromise = playerStatsPrefetchRef.current
-          ?? apiGet({ action: "getPlayerStats", studentId: student.id });
+        // ⚡ ใช้ค่าที่ prefetch ไว้แล้วถ้ามี (เฉพาะรอบแรก ถ้ากดลองใหม่ไม่ใช้ของเก่า)
+        const bundlePromise = (retryTrigger === 0 && challengeBundleRef.current)
+          ? challengeBundleRef.current
+          : apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
+        const statsPromise = (retryTrigger === 0 && playerStatsPrefetchRef.current)
+          ? playerStatsPrefetchRef.current
+          : apiGet({ action: "getPlayerStats", studentId: student.id });
 
-        const [data, statsData] = await Promise.all([bundlePromise, statsPromise]);
+        let [data, statsData] = await Promise.all([bundlePromise, statsPromise]);
 
         challengeBundleRef.current     = null; // ล้าง cache หลังใช้
         playerStatsPrefetchRef.current = null;
 
         if (data.error) { setLoadError(data.error); return; }
+
+        // 🔁 ถ้าได้ข้อสอบว่างเปล่า ลองอีกรอบก่อนสรุปว่าไม่มีจริงๆ
+        let pool = shuffle(data.questions || []);
+        if (!pool.length) {
+          const retryData = await apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
+          pool = shuffle(retryData.questions || []);
+          if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
+          data = retryData;
+        }
+
         setChallengeConfig(data.challengeConfig);
         setActiveBoss(data.boss || null);
-        // ใช้ playerStats จาก call แยก (สดกว่า) ถ้ามี ไม่งั้น fallback เป็นของ bundle
         setPlayerStats(statsData?.stats || data.playerStats || null);
-        const pool = shuffle(data.questions || []);
-        if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
         setChallengePool(pool);
         setScreen("challenge");
       } catch {
         setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ");
       }
     })();
-  }, [screen]);
+
+    return () => clearTimeout(stuckTimer);
+  }, [screen, retryTrigger]);
   
   const goHome = useCallback(() => {
     setResult(null); setQuestions([]);
     setChallengeResult(null); setChallengePool([]);
     setCachedConfig(null);
     setActiveBoss(null); setPlayerStats(null);
+    setRetryTrigger(0); setLoadingTooLong(false);
     if(isDirectLink){ setStudent(null); setScreen("login"); }
     else { setSet(null); setStudent(null); setScreen("setSelect"); }
   }, [isDirectLink]);
@@ -1969,6 +2064,7 @@ export default function App() {
   const goRetry = useCallback(() => {
     setQuestions([]); setResult(null);
     setChallengeResult(null); setChallengePool([]);
+    setRetryTrigger(0); setLoadingTooLong(false);
     setScreen("loading");
   }, []);
 
@@ -2039,13 +2135,29 @@ export default function App() {
                   border:`2px solid ${tc}55`,borderRadius:"16px",padding:"32px",
                   boxShadow:"0 20px 60px rgba(0,0,0,.8)",textAlign:"center",position:"relative",zIndex:1}}>
                   <p style={{color:"#e74c3c",fontFamily:"'Sarabun',sans-serif",marginBottom:"20px"}}>⚠ {loadError}</p>
-                  <button onClick={goHome} style={{width:"100%",padding:"12px",background:`${tc}11`,
-                    border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
-                    fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>กลับหน้าหลัก</button>
+                  <div style={{display:"flex",gap:"8px"}}>
+                    <button onClick={goHome} style={{flex:1,padding:"12px",background:`${tc}11`,
+                      border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
+                      fontFamily:"'Cinzel',serif",fontSize:"14px",cursor:"pointer"}}>กลับหน้าหลัก</button>
+                    <button onClick={()=>{ setLoadError(""); setRetryTrigger(t=>t+1); }} style={{flex:2,padding:"12px",
+                      background:`linear-gradient(135deg,#6b4f10,${tc},#6b4f10)`,border:"none",
+                      borderRadius:"10px",color:"#1a0e00",fontFamily:"'Cinzel',serif",
+                      fontSize:"14px",fontWeight:700,cursor:"pointer"}}>🔄 ลองใหม่</button>
+                  </div>
                 </div>
               </div>
-            :<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            :<div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px"}}>
                 <Spinner color={tc}/>
+                {loadingTooLong&&(
+                  <div style={{maxWidth:"320px",width:"100%",textAlign:"center",marginTop:"16px"}}>
+                    <p style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginBottom:"12px"}}>
+                      กำลังโหลดนานกว่าปกติ เครือข่ายอาจช้าอยู่ ระบบกำลังลองใหม่ให้อัตโนมัติ
+                    </p>
+                    <button onClick={()=>{ setLoadError(""); setRetryTrigger(t=>t+1); }} style={{width:"100%",padding:"10px",
+                      background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
+                      fontFamily:"'Cinzel',serif",fontSize:"13px",cursor:"pointer"}}>🔄 ลองโหลดใหม่ตอนนี้เลย</button>
+                  </div>
+                )}
               </div>
         )}
         {screen==="quiz"&&selectedSet&&student&&questions.length>0&&(
@@ -2070,5 +2182,70 @@ export default function App() {
         )}
       </div>
     </>
+  );
+}
+
+// ============================================================
+// ERROR BOUNDARY — กันไม่ให้ error ที่ไม่คาดคิดทำให้จอขาวค้าง
+// ============================================================
+// ปกติถ้า React component พัง (throw ระหว่าง render) จะทำให้
+// ทั้งหน้าจอกลายเป็นสีขาวเปล่าไม่มีอะไรเลย ไม่มีทางกู้คืน
+// ตัวนี้ดักไว้ แสดงปุ่ม "โหลดหน้าใหม่" แทน เพื่อให้นักเรียนยังมี
+// ทางออกเสมอ ไม่ใช่จอค้างแบบไม่รู้ต้องทำอะไร
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any, info: any) {
+    console.error("App crashed:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "20px", fontFamily: "'Sarabun',sans-serif", background: "#0d0803",
+        }}>
+          <div style={{
+            maxWidth: "380px", width: "100%", textAlign: "center",
+            background: "linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
+            border: "2px solid rgba(231,76,60,.4)", borderRadius: "16px", padding: "32px 24px",
+            boxShadow: "0 20px 60px rgba(0,0,0,.8)",
+          }}>
+            <div style={{ fontSize: "40px", marginBottom: "12px" }}>⚠️</div>
+            <p style={{ color: "#e74c3c", fontSize: "15px", marginBottom: "18px" }}>
+              เกิดข้อผิดพลาดที่ไม่คาดคิด
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                width: "100%", padding: "13px", borderRadius: "10px", border: "none",
+                background: "linear-gradient(135deg,#6b4f10,#d4af37,#6b4f10)",
+                color: "#1a0e00", fontFamily: "'Cinzel',serif", fontSize: "14px",
+                fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              🔄 โหลดหน้าใหม่
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <WihokWiphanApp />
+    </AppErrorBoundary>
   );
 }
