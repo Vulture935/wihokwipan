@@ -1276,7 +1276,7 @@ function DamageFlash({ damage, penetrated }: any) {
 function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss = null, playerStats = null }: any) {
   const { maxQuestions, challengeName } = challengeConfig;
   // ใช้ HP จริงจาก playerStats แทน challengeLives
-  const maxLives = playerStats?.effective?.hp ?? (challengeConfig.lives ?? 3);
+  const maxLives = playerStats?.effective?.hp ?? (challengeConfig.lives ?? 1);
   const tc     = theme.themeColor;
   const ACCENT = "#e74c3c";
   const isBoss = !!boss; // Boss mode ถ้ามี boss ส่งมา
@@ -1893,6 +1893,9 @@ function WihokWiphanApp() {
   const [loadError,setLoadError]=useState("");
   const [retryTrigger, setRetryTrigger] = useState(0); // ⚡ กดแล้ว trigger โหลดใหม่โดยไม่ออกจากหน้า
   const [loadingTooLong, setLoadingTooLong] = useState(false); // แสดงปุ่มลองใหม่ถ้าโหลดนานผิดปกติ
+  // ⚔️ Challenge mode: โหลดข้อสอบ "ต้องสำเร็จเสมอ" — ไม่มีหน้า error ที่ตัน
+  // ต้องกดเอง มีแต่สถานะ "กำลังลองใหม่ครั้งที่ N" ที่วนอัตโนมัติไปเรื่อยๆ
+  const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [theme,setTheme]=useState(DEFAULT_THEME);
   const [mode]=useState(()=>getModeFromUrl());
   const [challengeConfig,setChallengeConfig]=useState(null);
@@ -2006,51 +2009,74 @@ function WihokWiphanApp() {
   }, [screen, cachedConfig, retryTrigger]);
 
   // ── 2) โหลดข้อสอบโหมด Challenge + Boss (รวม 1 call) ────
+  // 🛡️ นโยบาย: "ต้องเข้าถึงโจทย์ได้เสมอ ช้าได้แต่ห้ามค้าง/ห้ามตัน"
+  // ต่างจากโหมดปกติตรงที่ตรงนี้ "ไม่มี" หน้า error ที่ต้องให้นักเรียนกดเอง —
+  // ถ้าพัง (network, timeout, ข้อมูลว่าง ฯลฯ) จะวน retry อัตโนมัติต่อไปเรื่อยๆ
+  // แบบ exponential backoff (เพดาน 15 วิ/ครั้ง) จนกว่าจะสำเร็จ พร้อมโชว์
+  // เลขจำนวนครั้งที่พยายามอยู่ ไม่ใช่ค้างเฉยๆแบบไม่รู้ว่ายังทำงานอยู่ไหม
+  // playerStats แยกอิสระจาก bundle: ถ้า stats พังไม่บล็อกการเข้าเกม เพราะ
+  // ChallengeScreen รองรับ playerStats=null (ใช้ค่า default) อยู่แล้ว
   useEffect(() => {
     if (screen !== "loading" || !selectedSet || !student || !isChallenge) return;
+    let cancelled = false;
     setLoadError("");
     setLoadingTooLong(false);
-    const stuckTimer = setTimeout(() => setLoadingTooLong(true), 20000);
+    setChallengeAttempt(0);
+    // เผื่อ "รอบแรกสุด" เพียงรอบเดียวก็นานผิดปกติอยู่แล้ว (เช่น internal
+    // retry ของ fetchJsonWithRetry เอง) — โชว์สถานะให้อุ่นใจไว้ก่อนแม้ยัง
+    // ไม่นับเป็นรอบที่ "พลาด" อย่างเป็นทางการ
+    const reassureTimer = setTimeout(() => setLoadingTooLong(true), 8000);
 
     (async () => {
-      try {
-        // ⚡ ใช้ค่าที่ prefetch ไว้แล้วถ้ามี (เฉพาะรอบแรก ถ้ากดลองใหม่ไม่ใช้ของเก่า)
-        const bundlePromise = (retryTrigger === 0 && challengeBundleRef.current)
-          ? challengeBundleRef.current
-          : apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
-        const statsPromise = (retryTrigger === 0 && playerStatsPrefetchRef.current)
-          ? playerStatsPrefetchRef.current
-          : apiGet({ action: "getPlayerStats", studentId: student.id });
+      let attempt = 0;
+      while (!cancelled) {
+        try {
+          // ⚡ ใช้ค่าที่ prefetch ไว้แล้วถ้ามี (เฉพาะพยายามครั้งแรกสุดของทั้งหน้า)
+          const bundlePromise = (attempt === 0 && retryTrigger === 0 && challengeBundleRef.current)
+            ? challengeBundleRef.current
+            : apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
+          const statsPromise = (attempt === 0 && retryTrigger === 0 && playerStatsPrefetchRef.current)
+            ? playerStatsPrefetchRef.current
+            : apiGet({ action: "getPlayerStats", studentId: student.id });
 
-        let [data, statsData] = await Promise.all([bundlePromise, statsPromise]);
+          // stats ห้ามทำให้ทั้งก้อนพัง — พังแล้วใช้ null แทน (ChallengeScreen รองรับอยู่แล้ว)
+          const [data, statsData] = await Promise.all([
+            bundlePromise,
+            statsPromise.catch(() => null),
+          ]);
 
-        challengeBundleRef.current     = null; // ล้าง cache หลังใช้
-        playerStatsPrefetchRef.current = null;
+          if (cancelled) return;
+          challengeBundleRef.current     = null; // ล้าง cache หลังใช้ (ไม่ว่าสำเร็จหรือพัง จะ fetch ใหม่รอบถัดไป)
+          playerStatsPrefetchRef.current = null;
 
-        if (data.error) { setLoadError(data.error); return; }
+          if (data?.error) throw new Error(data.error);
+          const pool = shuffle(data?.questions || []);
+          if (!pool.length) throw new Error("EMPTY_POOL");
 
-        // 🔁 ถ้าได้ข้อสอบว่างเปล่า ลองอีกรอบก่อนสรุปว่าไม่มีจริงๆ
-        let pool = shuffle(data.questions || []);
-        if (!pool.length) {
-          const retryData = await apiGet({ action: "getChallengeBundle", setId: selectedSet.id });
-          pool = shuffle(retryData.questions || []);
-          if (!pool.length) { setLoadError("ไม่พบข้อสอบในชุด Challenge"); return; }
-          data = retryData;
+          // ✅ สำเร็จ — เข้าเกมได้
+          setChallengeConfig(data.challengeConfig);
+          setActiveBoss(data.boss || null);
+          setPlayerStats(statsData?.stats || data.playerStats || null);
+          setChallengePool(pool);
+          setScreen("challenge");
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          attempt++;
+          setChallengeAttempt(attempt);
+          setLoadingTooLong(true); // โชว์กล่องสถานะ "กำลังลองใหม่" ตั้งแต่ครั้งแรกที่พลาด
+          // exponential backoff มี jitter กันหลายเครื่องยิงพร้อมกันเป๊ะ เพดาน 15 วิ
+          const delay = Math.min(15000, 1200 * Math.pow(1.6, Math.min(attempt, 8))) + Math.random() * 500;
+          await sleep(delay);
+          // ไม่ return / ไม่ throw ต่อ — วนลูปลองใหม่ไปเรื่อยๆ จนกว่าจะสำเร็จ
+          // หรือจนกว่า effect นี้จะถูกยกเลิก (ออกจากหน้า / unmount)
         }
-
-        setChallengeConfig(data.challengeConfig);
-        setActiveBoss(data.boss || null);
-        setPlayerStats(statsData?.stats || data.playerStats || null);
-        setChallengePool(pool);
-        setScreen("challenge");
-      } catch {
-        setLoadError("โหลด Challenge ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ");
       }
     })();
 
-    return () => clearTimeout(stuckTimer);
+    return () => { cancelled = true; clearTimeout(reassureTimer); };
   }, [screen, retryTrigger]);
-  
+
   const goHome = useCallback(() => {
     setResult(null); setQuestions([]);
     setChallengeResult(null); setChallengePool([]);
@@ -2128,7 +2154,38 @@ function WihokWiphanApp() {
   />
 )}
         {screen==="loading"&&(
-          loadError
+          isChallenge
+            // ⚔️ Challenge mode: ไม่มีหน้า error ที่ตัน — วน retry อัตโนมัติ
+            // อยู่เบื้องหลังเสมอ (ดู useEffect #2 ด้านบน) แค่โชว์สถานะ +
+            // ทางออกที่ "ไม่บังคับ" ให้กดเท่านั้น ไม่ใช่ทางเดียวที่จะไปต่อได้
+            ?<div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+                <Spinner color={tc}/>
+                {loadingTooLong&&(
+                  <div style={{maxWidth:"340px",width:"100%",textAlign:"center",marginTop:"16px"}}>
+                    <p style={{color:"#8b7355",fontFamily:"'Sarabun',sans-serif",fontSize:"13px",marginBottom:"10px"}}>
+                      {challengeAttempt>0
+                        ? `กำลังลองใหม่ครั้งที่ ${challengeAttempt} เครือข่ายอาจช้าอยู่ แต่ระบบจะพยายามต่อไปจนกว่าจะสำเร็จ ไม่ต้องกดอะไรเพิ่ม`
+                        : "กำลังโหลดนานกว่าปกติ เครือข่ายอาจช้าอยู่ กำลังพยายามต่อไป"}
+                    </p>
+                    {challengeAttempt>=5&&(
+                      <p style={{color:"#e67e22",fontFamily:"'Sarabun',sans-serif",fontSize:"12px",marginBottom:"12px"}}>
+                        ถ้านานผิดปกติมาก อาจเป็นเพราะยังไม่มีข้อสอบตั้งค่าไว้ในชุดนี้ ลองแจ้งครูให้ตรวจสอบดู
+                        (ระบบจะยังคงลองใหม่ให้ต่อไปเรื่อยๆ ไม่ต้องทำอะไร)
+                      </p>
+                    )}
+                    <div style={{display:"flex",gap:"8px"}}>
+                      <button onClick={goHome} style={{flex:1,padding:"10px",background:`${tc}11`,
+                        border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
+                        fontFamily:"'Cinzel',serif",fontSize:"13px",cursor:"pointer"}}>กลับหน้าหลัก</button>
+                      <button onClick={()=>setRetryTrigger(t=>t+1)} style={{flex:1,padding:"10px",
+                        background:`${tc}11`,border:`1px solid ${tc}44`,borderRadius:"10px",color:tc,
+                        fontFamily:"'Cinzel',serif",fontSize:"13px",cursor:"pointer"}}>🔄 ลองตอนนี้เลย</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            // โหมดปกติ: พฤติกรรมเดิมทุกประการ (มีหน้า error ให้กดลองใหม่เอง)
+            : loadError
             ?<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
                 <div style={{maxWidth:"400px",width:"100%",
                   background:"linear-gradient(160deg,rgba(20,12,5,.97),rgba(38,22,8,.97))",
