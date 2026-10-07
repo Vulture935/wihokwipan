@@ -1043,33 +1043,75 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }: any) {
   const [showDetail,setShowDetail]=useState(false);
   const [saving,setSaving]=useState(true);
   const [saveErr,setSaveErr]=useState(false);
+  const [saveUncertain,setSaveUncertain]=useState(false);
   const [charData,setCharData]=useState(null);
   const [showChar,setShowChar]=useState(false);
   const charStatus=isPerfect?"perfect":passed?"pass":"fail";
 
+  // attemptId คงที่ตลอดอายุของหน้านี้ (สร้างครั้งเดียว) ใช้กันบันทึกผลสอบซ้ำ
+  // เวลาต้อง retry หลัง timeout — ฝั่ง Server จะไม่ append แถวซ้ำถ้า attemptId
+  // เดิมถูกบันทึกไปแล้วจริง (ดู _isDuplicateResultAttempt ใน apps-script-v11.js)
+  const attemptIdRef=useRef(`${student.id}_${set.id}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`);
+
+  const buildSaveResultBody=()=>({
+    action:"saveResult",studentId:student.id,attemptId:attemptIdRef.current,
+    studentName:`${student.firstName} ${student.lastName}`,
+    studentNickname:student.nickname,setName:set.id,
+    score:`${totalScore}/${maxScore}`,correctCount:`${correctCount}/${results.length}`,
+    passed:passed?"ผ่าน":"ไม่ผ่าน",timeUsed,
+    correctIds:results.filter(r=>r.isCorrect).map(r=>r.question.id).join(","),
+    wrongIds:results.filter(r=>!r.isCorrect).map(r=>r.question.id).join(","),
+  });
+
   useEffect(()=>{
+    let cancelled=false;
     (async()=>{
+      // ── 1) บันทึกผลสอบหลัก — มีแค่ขั้นตอนนี้เท่านั้นที่กำหนดสถานะ
+      // "บันทึกแล้ว/ไม่สำเร็จ" ที่โชว์ให้นักเรียนเห็น ──────────────
+      let resultSaved=false;
       try {
-        await apiPost({
-          action:"saveResult",studentId:student.id,
-          studentName:`${student.firstName} ${student.lastName}`,
-          studentNickname:student.nickname,setName:set.id,
-          score:`${totalScore}/${maxScore}`,correctCount:`${correctCount}/${results.length}`,
-          passed:passed?"ผ่าน":"ไม่ผ่าน",timeUsed,
-          correctIds:results.filter(r=>r.isCorrect).map(r=>r.question.id).join(","),
-          wrongIds:results.filter(r=>!r.isCorrect).map(r=>r.question.id).join(","),
-        });
-        for(const r of rareOK){
-          if(r.question.seriesId)
-            await apiPost({action:"saveRareProgress",studentId:student.id,seriesId:r.question.seriesId,questionId:r.question.id});
+        const res=await apiPost(buildSaveResultBody());
+        if(res?.error) throw new Error(res.error);
+        resultSaved=true;
+      } catch {
+        // ❗ อย่ารีบฟันธงว่า "ไม่สำเร็จ" ทันที: มีโอกาสที่ฝั่ง Server บันทึก
+        // สำเร็จไปแล้วจริงๆ แค่คำตอบมาไม่ทัน (ช้าเกิน timeout/proxy ล่ม)
+        // ให้เช็คย้อนกลับก่อนด้วย attemptId ก่อนตัดสินใจ
+        try {
+          const check=await apiGet({action:"checkResultSaved",attemptId:attemptIdRef.current});
+          resultSaved=!!check?.saved;
+        } catch { /* เช็คไม่ได้ก็ถือว่ายังไม่ยืนยัน ไปลอง retry ต่อ */ }
+
+        if(!resultSaved){
+          // ยังไม่ยืนยันว่าบันทึกแล้ว → ลอง retry POST อีกครั้งเดียว (ปลอดภัย
+          // เพราะฝั่ง Server กันซ้ำด้วย attemptId แล้ว ไม่เสี่ยงบันทึกซ้ำสอง)
+          try {
+            const retryRes=await apiPost(buildSaveResultBody());
+            resultSaved=!retryRes?.error;
+          } catch {
+            // ยังเช็ค/ส่งซ้ำไม่สำเร็จอีก — ไม่รู้สถานะจริงแน่ชัด ไม่ควรฟันธง
+            // ว่า "ไม่สำเร็จ" แบบมั่นใจ100% เพราะอาจทำให้นักเรียนตกใจเกินจริง
+            setSaveUncertain(true);
+          }
         }
-      } catch { setSaveErr(true); }
-      setSaving(false);
+      }
+      if(!cancelled){ setSaveErr(!resultSaved); setSaving(false); }
+
+      // ── 2) บันทึกคะแนนสะสมไอเทมหายาก — เป็นแค่ของเสริม ทำแบบ best-effort
+      // ล้มเหลวได้โดยไม่กระทบสถานะ "บันทึกผลสอบ" ที่โชว์ด้านบน ──────────
+      for(const r of rareOK){
+        if(r.question.seriesId){
+          try { await apiPost({action:"saveRareProgress",studentId:student.id,seriesId:r.question.seriesId,questionId:r.question.id}); }
+          catch { /* เงียบ ไม่กระทบสถานะบันทึกผลสอบหลัก */ }
+        }
+      }
+
       try {
         const cr=await apiGet({action:"getCharacter",setId:set.id});
         if(cr.character){setCharData(cr.character);setShowChar(true);}
       } catch {}
     })();
+    return ()=>{ cancelled=true; };
   },[]);
 
   const scorePct=maxScore>0?(totalScore/maxScore)*100:0;
@@ -1118,8 +1160,10 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }: any) {
               {student.nickname} · {set.id} · ใช้เวลา {formatTime(timeUsed)}
             </div>
             <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
-              color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
-              {saving?"⏳ กำลังบันทึก...":saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
+              color:saving?"#6b5a3e":(saveErr&&saveUncertain)?"#e67e22":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
+              {saving?"⏳ กำลังบันทึก...":
+                (saveErr&&saveUncertain)?"⚠ ไม่แน่ใจสถานะการบันทึก — แจ้งครูเพื่อตรวจสอบ":
+                saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
             </div>
           </div>
 
@@ -1709,24 +1753,48 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
   const [showDetail,setShowDetail]=useState(false);
   const [saving,setSaving]=useState(true);
   const [saveErr,setSaveErr]=useState(false);
+  const [saveUncertain,setSaveUncertain]=useState(false);
+
+  // attemptId คงที่ตลอดอายุของหน้านี้ — ใช้กันบันทึกผลซ้ำตอน retry หลัง
+  // timeout (ดูคำอธิบายละเอียดใน ResultScreen ข้างบน / apps-script-v11.js)
+  const attemptIdRef=useRef(`${student.id}_challenge_${Date.now()}_${Math.random().toString(36).slice(2,8)}`);
+
+  const buildSaveResultBody=()=>({
+    action:"saveResult", studentId:student.id, attemptId:attemptIdRef.current,
+    studentName:`${student.firstName} ${student.lastName}`,
+    studentNickname:student.nickname,
+    setName:`[CHALLENGE] ${challengeConfig.challengeName||challengeConfig.setId}`,
+    score:`${score}/${maxScore}`, correctCount:`${correctCount}/${totalQ}`,
+    passed:isComplete?"ผ่าน (ครบจำนวน)":`ไม่ผ่าน (หมดชีวิต ข้อ ${totalQ})`,
+    timeUsed:0,
+    correctIds:history.filter(h=>h.isCorrect).map(h=>h.question.id).join(","),
+    wrongIds:history.filter(h=>!h.isCorrect).map(h=>h.question.id).join(","),
+  });
 
   useEffect(()=>{
+    let cancelled=false;
     (async()=>{
+      let resultSaved=false;
       try {
-        await apiPost({
-          action:"saveResult", studentId:student.id,
-          studentName:`${student.firstName} ${student.lastName}`,
-          studentNickname:student.nickname,
-          setName:`[CHALLENGE] ${challengeConfig.challengeName||challengeConfig.setId}`,
-          score:`${score}/${maxScore}`, correctCount:`${correctCount}/${totalQ}`,
-          passed:isComplete?"ผ่าน (ครบจำนวน)":`ไม่ผ่าน (หมดชีวิต ข้อ ${totalQ})`,
-          timeUsed:0,
-          correctIds:history.filter(h=>h.isCorrect).map(h=>h.question.id).join(","),
-          wrongIds:history.filter(h=>!h.isCorrect).map(h=>h.question.id).join(","),
-        });
-      } catch { setSaveErr(true); }
-      setSaving(false);
+        const res=await apiPost(buildSaveResultBody());
+        if(res?.error) throw new Error(res.error);
+        resultSaved=true;
+      } catch {
+        // เช่นเดียวกับ ResultScreen: เช็คย้อนกลับก่อนฟันธงว่าไม่สำเร็จ
+        try {
+          const check=await apiGet({action:"checkResultSaved",attemptId:attemptIdRef.current});
+          resultSaved=!!check?.saved;
+        } catch {}
+        if(!resultSaved){
+          try {
+            const retryRes=await apiPost(buildSaveResultBody());
+            resultSaved=!retryRes?.error;
+          } catch { setSaveUncertain(true); }
+        }
+      }
+      if(!cancelled){ setSaveErr(!resultSaved); setSaving(false); }
     })();
+    return ()=>{ cancelled=true; };
   },[]);
 
   // ใช้ AnswerRow สำหรับ challenge history ด้วย
@@ -1774,8 +1842,10 @@ function ChallengeResultScreen({ data, onRetry, onHome, theme }) {
             {student.nickname} · ถูก {correctCount}/{totalQ} ข้อ
           </div>
           <div style={{marginTop:"6px",fontSize:"11px",fontFamily:"'Cinzel',serif",
-            color:saving?"#6b5a3e":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
-            {saving?"⏳ กำลังบันทึก...":saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
+            color:saving?"#6b5a3e":(saveErr&&saveUncertain)?"#e67e22":saveErr?"#e74c3c":"rgba(39,174,96,.7)"}}>
+            {saving?"⏳ กำลังบันทึก...":
+              (saveErr&&saveUncertain)?"⚠ ไม่แน่ใจสถานะการบันทึก — แจ้งครูเพื่อตรวจสอบ":
+              saveErr?"✗ บันทึกไม่สำเร็จ":"✓ บันทึกแล้ว"}
           </div>
         </div>
 
