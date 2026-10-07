@@ -196,9 +196,16 @@ async function apiPost(body) {
   try {
     return await fetchJsonWithRetry(currentBaseUrl(), { method:"POST", body:JSON.stringify(body) },
       { retries: 1, retryOnTimeout: false, isRead: false });
-  } catch (err) {
+  } catch (err: any) {
     // POST ก็ยอม fallback ไปยิงตรงได้เช่นกันถ้า proxy เจ๊งจริงๆ (ยังไม่ retry ซ้ำที่ timeout เหมือนเดิม)
-    if (!useDirectFallback && currentBaseUrl() !== DIRECT_SCRIPT_URL) {
+    // ⚠️ แต่ถ้า error รอบแรกเป็น timeout (AbortError) ห้าม fallback ไปยิงตรงซ้ำ
+    // เด็ดขาด — timeout แปลว่า "ไม่รู้ว่าคำสั่งไปถึง/สำเร็จที่ Server หรือยัง"
+    // ถ้ายิงซ้ำไปอีก URL หนึ่งจะเสี่ยงบันทึกซ้ำสอง (เช่น Server ประมวลผล
+    // request แรกสำเร็จไปแล้วจริง แค่ตอบกลับช้าเกิน timeout) ต่างจาก error
+    // แบบอื่น (เช่น proxy ตอบ HTTP error ทันที) ที่มักแปลว่าคำขอไปไม่ถึง
+    // ขั้นตอนประมวลผลจริงด้วยซ้ำ จึง fallback ได้ปลอดภัยกว่า
+    const isTimeout = err?.name === "AbortError";
+    if (!isTimeout && !useDirectFallback && currentBaseUrl() !== DIRECT_SCRIPT_URL) {
       try {
         return await fetchJsonWithRetry(DIRECT_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) },
           { retries: 0, retryOnTimeout: false, isRead: false });
@@ -1393,7 +1400,11 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
       questionId: "session",
       setName:   "session",
       attemptId,
-    }).catch(() => {});
+    }).then((res:any)=>{
+      // ยังเป็น fire-and-forget เหมือนเดิม (ไม่บล็อก UI) แค่ไม่กลืน error
+      // แบบเงียบๆ อีกต่อไป เผื่อ debug ย้อนหลังว่าทำไม damage ไม่เข้า Sheet
+      if(res?.error) console.warn("saveFinalBossDamage error:", res.error);
+    }).catch((err:any)=>console.warn("saveFinalBossDamage failed:", err));
 
     return { totalDmg, pen, newBossHp };
   }
