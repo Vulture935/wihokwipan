@@ -1,0 +1,69 @@
+# WihokWipan — คำสั่งสำหรับ Claude
+
+> อ่านไฟล์นี้ก่อนเริ่มงานทุกครั้ง รายละเอียดเต็มอยู่ใน `docs/system-map.md`
+
+## บริบท
+ระบบตรวจข้อสอบคณิตศาสตร์ออนไลน์ + เกมมิฟิเคชัน ของติวเตอร์คณิตศาสตร์ (ปทุมธานี–รังสิต)
+เป้าหมายปลายทาง: พานักเรียนสอบติดสวนกุหลาบรังสิต / สายปัญญารังสิต / จุฬาภรณ์ปทุมธานี / สาธิต / สามเสน
+
+## วิธีคุยกับเจ้าของระบบ
+- **ภาษาไทยเสมอ**
+- ความรู้โค้ด ~0 แต่**ตรรกะดีมาก** → อธิบายด้วยตรรกะและการเปรียบเทียบ ห้ามเริ่มจากศัพท์เทคนิค
+- การตัดสินใจเชิงออกแบบระบบเป็นของเจ้าของ — หน้าที่ Claude คือแปลงเป็นโค้ด **และเถียงถ้าเห็นว่าออกแบบผิด**
+- ส่งงานเป็นไฟล์ ไม่แปะโค้ดยาวในแชท
+
+## สถาปัตยกรรม (ย่อ)
+```
+แอปข้อสอบ (Vercel: wihokwipan)  ─┐
+แอปร้านค้า (Vercel: wipan-shop) ─┴─► /api/proxy ─► Apps Script ─► Google Sheet (46 แท็บ)
+```
+- **Google Sheet ID:** `1TdOOHQ4g_maj7pkwFS_5GyUusMg99oFoZxV16mKvVFA`
+- **Apps Script Web App:** URL อยู่ใน `api/proxy.js` และในทุก frontend
+- Apps Script รับ request พร้อมกันได้แค่ ~30 → proxy มีไว้ cache คำขอแบบอ่าน
+
+## ไฟล์ในนี้
+| path | คืออะไร |
+|---|---|
+| `src/App.tsx` | **แอปข้อสอบหลัก** (รวม Challenge/Boss Mode ในตัว) — ตัวที่ใช้งานจริง |
+| `api/proxy.js` | Vercel cache proxy — ⚠️ ต้องคัดลอกไปวางในโปรเจค Vercel ของร้านค้าด้วย |
+| `apps-script/apps-script-v11.js` | **Backend ทั้งระบบ** — ต้องคัดลอกไปวางใน Apps Script editor แล้ว deploy เป็น New version เอง |
+| `docs/system-map.md` | แผนที่ระบบฉบับเต็ม |
+
+**ไม่อยู่ใน repo (ต้องยืนยันกับเจ้าของก่อนใช้):** source ของแอปร้านค้า, Castle Mode (ยังไม่ deploy)
+**เลิกใช้แล้ว:** `boss-battle-app.jsx` — Boss Battle ใช้ผ่าน `src/App.tsx` (Challenge Mode) เท่านั้น
+
+## กฎเหล็ก 5 ข้อ (เคยพังมาแล้วทั้งหมด)
+
+1. **ทุกจุดที่เรียก POST ต้องเช็ค `res.error` ไม่ใช่แค่ดูว่า request ไม่ throw**
+   Apps Script ตอบ error กลับมาแบบ **HTTP 200** (เช่นตอน Lock ชนกัน: `{error:"ระบบกำลังประมวลผลคำขออื่นอยู่..."}`)
+   ถ้าไม่เช็ค จะโชว์ "สำเร็จ" ทั้งที่ไม่ได้บันทึก
+
+2. **timeout ≠ ล้มเหลว** — Apps Script อาจทำเสร็จแล้วแต่ตอบช้า
+   ห้าม retry POST หลัง timeout เว้นแต่ action นั้นมี `attemptId` กันซ้ำฝั่ง server
+   ถ้าไม่แน่ใจสถานะ ให้โชว์ "⚠ ไม่แน่ใจ" ห้ามฟันธงว่า "✗ ไม่สำเร็จ"
+
+3. **Google Sheets แปลง string ที่หน้าตาเหมือนวันที่เป็น Date เอง**
+   เคยทำ Castle Mode พังทั้งโหมด — ถ้าเขียนคอลัมที่เก็บรหัสคล้ายวันที่ (`2026-09-21`)
+   ต้อง `setNumberFormat("@")` ตอนเขียน + normalize ตอนอ่าน (ดู `_normalizeWeekId()`)
+
+4. **การเขียนทุกอย่างใช้ Lock กลางตัวเดียว** (`doPost`) — โค้ดที่ช้าในนั้นทำให้ทุกคนรอ
+   อย่าเพิ่มงานหนักใน `doPost` โดยไม่ cache (ดู `_isAchColumnsVerified()` เป็นตัวอย่าง)
+
+5. **action ที่ยังไม่มี `attemptId` กันซ้ำ:** `buyArtifact`, `upgradeArtifact`, `claimArtifact`, `grantArtifact`, `gachaDraw`
+   ห้ามทำให้ retry ได้จนกว่าจะเพิ่ม dedup — เสี่ยงหัก Gold ซ้ำ
+
+## ค่าคงที่สำคัญ
+`GACHA_COST = 1000` · `CASTLE_GOLD_PER_LEVEL = 200` · `CASTLE_ARTIFACT_LEVEL_BONUS = 100`
+Trigger ของ Castle Mode **ปิดอยู่ตามเจตนา** (ยังไม่เปิดโหมดปราสาท)
+
+## วิธีทดสอบโค้ด frontend ที่นี่
+ไม่มี tsc เต็ม — ใช้ esbuild เช็ค syntax:
+```
+npx esbuild <file>.tsx --outfile=/tmp/out.js --format=esm --jsx=automatic
+```
+(ห้ามใส่ `--loader=tsx` จะ error — นามสกุลไฟล์พอแล้ว)
+Apps Script เช็คด้วย `node --check apps-script/apps-script-v11.js`
+
+## งานค้างที่สำคัญ
+ดูตารางความเสี่ยงใน `docs/system-map.md` ข้อ 7 — อันดับ 1 คือ Apps Script ไม่มี version control
+(กำลังแก้ด้วยการเอาเข้า repo นี้)
