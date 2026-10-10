@@ -1300,16 +1300,24 @@ function saveResult(data) {
   const sheet = getOrCreateSheet("QuizResults", [
     "Timestamp","StudentID","ชื่อ-นามสกุล","ชื่อเล่น",
     "ชุดข้อสอบ","คะแนน","จำนวนข้อถูก","ผ่าน/ไม่ผ่าน",
-    "เวลาที่ใช้(วินาที)","QuestionID ที่ถูก","QuestionID ที่ผิด","AttemptID"
+    "เวลาที่ใช้(วินาที)","QuestionID ที่ถูก","QuestionID ที่ผิด","AttemptID",
+    "QuestionID ที่ไม่ได้ตอบ","เวลาจริง(วินาที)"
   ]);
-  // sheet นี้มีอยู่แล้วตั้งแต่ก่อนมีคอลัม AttemptID → getOrCreateSheet จะไม่
-  // ย้อนไปเพิ่มหัวตารางให้ (สร้างหัวตารางเฉพาะตอนสร้างชีทใหม่เท่านั้น)
-  // จึงต้องเช็คเติมหัวตารางคอลัม L (12) เองแบบ defensive ถ้ายังว่างอยู่
+  // sheet นี้มีอยู่แล้วตั้งแต่ก่อนมีคอลัมใหม่ → getOrCreateSheet จะไม่ย้อนไป
+  // เพิ่มหัวตารางให้ (สร้างหัวตารางเฉพาะตอนสร้างชีทใหม่เท่านั้น) จึงต้อง
+  // เช็คเติมหัวตารางคอลัม L/M/N เองแบบ defensive ถ้ายังว่างอยู่
   const ATTEMPT_COL = 12;
+  const BLANK_COL   = 13; // QuestionID ที่ไม่ได้ตอบ (ส่วนย่อยของ "ที่ผิด")
+  const RAWTIME_COL = 14; // เวลาจริงที่ผ่านไป ไม่ตัดตามเวลาที่กำหนด
   try {
-    if (sheet.getLastColumn() < ATTEMPT_COL || !String(sheet.getRange(1, ATTEMPT_COL).getValue()).trim()) {
-      sheet.getRange(1, ATTEMPT_COL).setValue("AttemptID");
-    }
+    [[ATTEMPT_COL, "AttemptID"],
+     [BLANK_COL,   "QuestionID ที่ไม่ได้ตอบ"],
+     [RAWTIME_COL, "เวลาจริง(วินาที)"]].forEach(function (pair) {
+      const col = pair[0], label = pair[1];
+      if (sheet.getLastColumn() < col || !String(sheet.getRange(1, col).getValue()).trim()) {
+        sheet.getRange(1, col).setValue(label);
+      }
+    });
   } catch (hdrErr) { Logger.log("saveResult header backfill error: " + hdrErr.message); }
 
   // ⚡ กันบันทึกผลสอบซ้ำ: ถ้า Client แนบ attemptId มา (สร้างครั้งเดียวตอนเริ่ม
@@ -1328,6 +1336,9 @@ function saveResult(data) {
     data.passed          || "", data.timeUsed        || 0,
     data.correctIds      || "", data.wrongIds        || "",
     data.attemptId       || "",
+    data.blankIds        || "",
+    (data.timeUsedRaw !== undefined && data.timeUsedRaw !== null)
+      ? data.timeUsedRaw : (data.timeUsed || 0),
   ]);
 
   // ── AUTO ACHIEVEMENT COLUMNS (v10) ─────────────────────────

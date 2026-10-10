@@ -874,20 +874,40 @@ function AnswerRow({ r, i, tc }: any) {
 }
 
 const TimerDisplay = React.memo(({ initialTime, tc, onTimeUp }: any) => {
+  // ⏱ นับเวลาจาก "เวลานาฬิกาจริง" ไม่ใช่การลบทีละ 1 วินาที
+  //
+  // ปัญหาเดิม: setInterval จะถูกเบราว์เซอร์หยุดหรือหน่วงเมื่อพับจอ /
+  // สลับแอป / จอดับ ทำให้นาฬิกาค้างอยู่ที่เดิม นักเรียนจึงได้เวลาจริง
+  // เกินกำหนด (พับจอไปคิดคำตอบแล้วกลับมาต่อได้ เวลาแทบไม่เดิน)
+  //
+  // วิธีใหม่: จำ "เวลาที่ต้องหมด" (deadline) ไว้ตั้งแต่เริ่ม แล้วทุกครั้ง
+  // ที่มีจังหวะเช็ค ให้คำนวณใหม่จากนาฬิกาจริง ดังนั้นแม้ setInterval จะถูก
+  // หยุดไปนานแค่ไหน พอกลับมาหน้าจอก็จะกระโดดไปเวลาที่ถูกต้องทันที
+  // และถ้าเลยกำหนดไปแล้วจะส่งข้อสอบให้เลย
+  const deadlineRef = useRef(Date.now() + initialTime * 1000);
+  const firedRef    = useRef(false);
   const [timeLeft, setTimeLeft] = useState(initialTime);
 
   useEffect(() => {
-    const timerId = setInterval(() => {
-      setTimeLeft((prev: number) => {
-        if (prev <= 1) {
-          clearInterval(timerId);
-          onTimeUp();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerId);
+    const tick = () => {
+      const remain = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
+      setTimeLeft(remain);
+      if (remain <= 0 && !firedRef.current) {
+        firedRef.current = true;
+        onTimeUp();
+      }
+    };
+    const timerId = setInterval(tick, 1000);
+    // เช็คซ้ำทันทีตอนกลับมาที่หน้าจอ กันกรณี setInterval ถูกหยุดตอนพับจอ
+    const recheck = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+    tick();
+    return () => {
+      clearInterval(timerId);
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", recheck);
+    };
   }, [onTimeUp]);
 
   return (
@@ -917,20 +937,27 @@ function QuizScreen({ set, student, questions, onFinish, theme }: any) {
 
   const finish=useCallback((timeUp=false)=>{
     // คำนวณเวลาที่ใช้จริงจาก Date.now()
-    let timeUsed=Math.floor((Date.now()-startTimeRef.current)/1000);
+    // timeUsedRaw = เวลาจริงที่ผ่านไป (ไม่ตัด) — ใช้ดูว่ามีการพับจอ/ทิ้งค้างไหม
+    // timeUsed    = ตัดไม่ให้เกินเวลาที่กำหนด (คงพฤติกรรมเดิมไว้ เพราะสูตรใน
+    //               ชีต Identity / Rosy Maple Moth อ้างอิงคอลัมนี้อยู่)
+    const timeUsedRaw=Math.floor((Date.now()-startTimeRef.current)/1000);
+    let timeUsed=timeUsedRaw;
     if(timeUsed>set.timeLimit) timeUsed=set.timeLimit;
 
     const results=questions.map((q,qi)=>{
       const shuffled=allShuffled[qi], ans=answers[qi]??null;
       if(q.questionType==="text"){
-        const isCorrect=ans!==null&&ans!==""&&checkTextAnswer(ans,q.correctTextAnswer);
-        return {question:q,selectedOrigIndex:null,userTextAnswer:ans,isCorrect,shuffledChoices:[]};
+        // isBlank = ไม่ได้ตอบเลย (ต่างจาก "ตอบแล้วผิด" — ดูเหตุผลที่ ResultScreen)
+        const isBlank=ans===null||String(ans).trim()==="";
+        const isCorrect=!isBlank&&checkTextAnswer(ans,q.correctTextAnswer);
+        return {question:q,selectedOrigIndex:null,userTextAnswer:ans,isCorrect,isBlank,shuffledChoices:[]};
       } else {
-        const oi=ans!==null?shuffled[ans].origIndex:null;
-        return {question:q,selectedOrigIndex:oi,isCorrect:oi===q.answer,shuffledChoices:shuffled};
+        const isBlank=ans===null;
+        const oi=!isBlank?shuffled[ans].origIndex:null;
+        return {question:q,selectedOrigIndex:oi,isCorrect:oi===q.answer,isBlank,shuffledChoices:shuffled};
       }
     });
-    onFinish({results,timeUsed,timeUp,student,set,maxScore});
+    onFinish({results,timeUsed,timeUsedRaw,timeUp,student,set,maxScore});
   },[answers, questions, set, student, maxScore, allShuffled]);
 
   useEffect(()=>{
@@ -1040,7 +1067,7 @@ function QuizScreen({ set, student, questions, onFinish, theme }: any) {
 }
 
 function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }: any) {
-  const {results,timeUsed,timeUp,student,set,maxScore}=data;
+  const {results,timeUsed,timeUsedRaw,timeUp,student,set,maxScore}=data;
   const totalScore=calcTotalScore(results);
   const passed=totalScore>=set.passingScore;
   const isPerfect=totalScore===maxScore&&maxScore>0;
@@ -1066,8 +1093,18 @@ function ResultScreen({ data, onRetry, onHome, isDirectLink, theme }: any) {
     studentNickname:student.nickname,setName:set.id,
     score:`${totalScore}/${maxScore}`,correctCount:`${correctCount}/${results.length}`,
     passed:passed?"ผ่าน":"ไม่ผ่าน",timeUsed,
+    timeUsedRaw:timeUsedRaw??timeUsed,
     correctIds:results.filter(r=>r.isCorrect).map(r=>r.question.id).join(","),
+    // ⚠️ wrongIds คงความหมายเดิมไว้ = "ทุกข้อที่ไม่ถูก" (รวมข้อที่ไม่ได้ตอบ)
+    // ห้ามเปลี่ยน เพราะสูตร COUNTIFS ในชีต Identity / Rosy Maple Moth /
+    // Purple Emperor / Paper Kite นับจากคอลัมนี้อยู่ ถ้าเปลี่ยนความหมาย
+    // ข้อมูลเก่า 6,600 ครั้งจะเทียบกับข้อมูลใหม่ไม่ได้
     wrongIds:results.filter(r=>!r.isCorrect).map(r=>r.question.id).join(","),
+    // blankIds = "ไม่ได้ตอบเลย" ซึ่งเป็น "ส่วนย่อย" ของ wrongIds
+    // → ข้อที่ตอบแล้วผิดจริง = wrongIds ลบ blankIds
+    // แยกไว้เพราะสองอย่างนี้ต้องสอนคนละแบบ: ตอบผิด = ไม่เข้าใจเนื้อหา
+    // ส่วนไม่ได้ตอบ = ทำไม่ทัน/บริหารเวลาไม่ได้ ไม่ใช่ปัญหาความรู้
+    blankIds:results.filter(r=>r.isBlank).map(r=>r.question.id).join(","),
   });
 
   useEffect(()=>{
@@ -1358,17 +1395,32 @@ function ChallengeScreen({ challengeConfig, student, pool, onFinish, theme, boss
   const timerRef   = useRef<any>(null);
 
   // ── Timer ต่อข้อ (Boss mode เท่านั้น) ──────────────────
+  // ใช้หลักเดียวกับ TimerDisplay: นับจากนาฬิกาจริง ไม่ใช่ลบทีละวินาที
+  // กันเวลาค้างตอนพับจอ/สลับแอป (ดูคำอธิบายเต็มที่ TimerDisplay)
   useEffect(() => {
     if (!isBoss || phase !== "question" || !current) return;
+    const deadline = Date.now() + timePerQ * 1000;
+    let fired = false;
     setTimeLeft(timePerQ);
     clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t: number) => {
-        if (t <= 1) { clearInterval(timerRef.current); submitAnswer(true); return 0; }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
+    const tick = () => {
+      const remain = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setTimeLeft(remain);
+      if (remain <= 0 && !fired) {
+        fired = true;
+        clearInterval(timerRef.current);
+        submitAnswer(true);
+      }
+    };
+    timerRef.current = setInterval(tick, 1000);
+    const recheck = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+    return () => {
+      clearInterval(timerRef.current);
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", recheck);
+    };
   }, [current, phase]);
 
   useEffect(()=>{ loadNext(0, maxLives, []); },[]);
